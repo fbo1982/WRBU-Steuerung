@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.3
+# WRBU Steuerung · V0.1.4
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -12,7 +12,7 @@ direkter Modbus-Prüfung und integrierten DWD-Warnungen.
 3. **WRBU Steuerung** installieren, starten und **Weboberfläche öffnen** wählen.
 4. **Wechselrichter anlegen**: Name, Geräteprofil, IP, TCP-Port und Modbus-Geräte-ID eingeben.
 5. **Kommunikation prüfen**. Nach erfolgreichem Test Kategorien bearbeiten und
-   **Speichern und aktivieren** wählen.
+   **Speichern und SOC abgleichen** wählen.
 
 **Die WR-Prüfung und das Speichern benötigen weder Wetterstandort noch
 DWD-Sensor oder Home-Assistant-Verbindung.** Ohne gültige Wetterdaten pausiert
@@ -97,9 +97,32 @@ keine regelmäßigen Modbus-Schreibzugriffe.
 Die App erkennt Modell und Seriennummer, liest den Backup-SOC, schreibt
 **denselben Wert genau einmal** und liest ihn erneut vom Gerät.
 Ergebnis, Schreibbestätigung und Rücklesewert werden angezeigt.
-Nur ein erfolgreicher Test erlaubt das Speichern. Der Test gilt zehn Minuten,
+Neue oder geänderte Verbindungsdaten können erst nach erfolgreichem Test gespeichert werden. Der Test gilt zehn Minuten,
 ist an die WR-Verbindungsdaten gebunden und wird beim Speichern verbraucht.
 Änderungen am Wetterstandort beeinflussen diesen Test nicht.
+
+### Kategorien speichern und aktuellen SOC abgleichen
+
+Bei einem bereits gespeicherten WR können die Kategorien direkt bearbeitet,
+übernommen und mit **Speichern und SOC abgleichen** dauerhaft gespeichert werden.
+Solange IP, Port, Geräte-ID und Profil unverändert sind, ist keine neue
+Kommunikationsprüfung notwendig. Eine reine Namensänderung benötigt ebenfalls
+keine neue Prüfung. Neue/geänderte Verbindungsdaten bleiben prüfpflichtig.
+
+Beim Speichern wird immer anhand des aktuellen Monats und gültiger DWD-Daten
+der aktuell zutreffende Sollwert bestimmt und der reale Backup-SOC am WR gelesen.
+Auch bei unveränderten Regeln wird eine manuelle Abweichung dadurch erkannt.
+Nur ein abweichender Wert wird geschrieben und anschließend zurückgelesen.
+Änderungen an anderen Monaten werden gespeichert; für den WR zählt die
+gerade gültige Kategorie.
+
+Die Ergebnisanzeige unterscheidet **gespeichert und geschrieben**,
+**gespeichert und bereits korrekt**, **gespeichert, Abgleich pausiert** sowie
+**gespeichert, Abgleich fehlgeschlagen und Retry geplant**. Bei fehlenden
+DWD-Daten oder einem Monat ohne Regel wird kein unsicherer SOC angenommen.
+Bei einem Modbus-Fehler bleiben die neuen Regeln erhalten und werden nach
+30 Sekunden erneut angewendet. Schlägt schon das dauerhafte Speichern fehl,
+wird der WR nicht verändert.
 
 Die Prüfung zeigt ihren aktuellen Schritt und die verstrichene Zeit direkt im Formular.
 Auch ein Fehler beim Verbindungsaufbau oder bei der Geräteerkennung erscheint dort.
@@ -141,7 +164,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.3** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.4** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

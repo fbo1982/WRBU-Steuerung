@@ -11,3 +11,6 @@ button{border:0;border-radius:8px;padding:11px 16px;background:#087f74;color:#ff
 
 .weather-panel{margin:0 0 24px}.weather-panel label{max-width:720px}#weather-choice{margin-top:20px;display:flex;align-items:flex-end;gap:14px}#weather-choice label{flex:1}#weather-message{min-height:20px}#weather-headlines{padding-left:20px;font-size:14px}#weather-summary{line-height:1.6}@media(max-width:780px){#weather-choice{align-items:stretch;flex-direction:column}}
 
+
+.result.pending{background:#fff7df;border-color:#e8dbac;color:#665021}
+

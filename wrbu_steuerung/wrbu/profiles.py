@@ -123,10 +123,13 @@ class SungrowSH:
             raise ValueError("Backup-SOC muss zwischen 0 und 100 liegen")
         async with self.session() as session:
             await self._identify(session)
+            self.progress("read_soc", f"Backup-SOC wird gelesen; aktuell gültiger Sollwert ist {value} %.")
             current = await self._read_soc(session)
             if current == value:
                 return current, False
+            self.progress("write_soc", f"Backup-SOC wird von {current} % auf {value} % gesetzt.")
             await session.write(self.ADDRESS, value)
+            self.progress("readback", "Geschriebener Backup-SOC wird zurückgelesen und bestätigt.")
             actual = await self._read_soc(session)
             if actual != value:
                 raise ModbusError(f"Rücklesefehler: erwartet {value}, gelesen {actual}")

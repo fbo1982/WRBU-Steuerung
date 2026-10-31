@@ -30,10 +30,10 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           push: false
           load: true
-          tags: wrbu-smoke:0.1.3
+          tags: wrbu-smoke:0.1.4
       - name: Start app and check health
         run: |
-          docker run --detach --name wrbu-smoke --platform linux/${{ matrix.arch }} -p 127.0.0.1:18099:8099 wrbu-smoke:0.1.3
+          docker run --detach --name wrbu-smoke --platform linux/${{ matrix.arch }} -p 127.0.0.1:18099:8099 wrbu-smoke:0.1.4
           python tests/container_smoke.py
       - name: Container log and cleanup
         if: always()

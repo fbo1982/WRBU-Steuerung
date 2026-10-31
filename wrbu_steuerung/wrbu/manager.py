@@ -98,6 +98,7 @@ class Manager:
         self._queued = set()
         self._lock = asyncio.Lock()
         self._probe_jobs = {}
+        self._save_jobs = {}
         self._stopped = False
 
     def now(self):
@@ -195,35 +196,125 @@ class Manager:
         return {**{key: deepcopy(job[key]) for key in ("id", "state", "stage", "message", "result", "proof")},
                 "elapsed": round(time.monotonic()-job["created"], 1)}
 
-    async def save(self, data):
+    async def save(self, data, progress=None):
+        """Persist first, then explicitly check the currently applicable SOC once."""
+        progress = progress or (lambda stage, message: None)
         connection = normalize_connection(data["connection"])
         categories = validate_categories(data["categories"])
         if not categories:
             raise ValueError("Mindestens eine Kategorie anlegen.")
         async with self._lock:
-            proof = self._proofs.get(data.get("proof", ""))
-            if (proof is None or proof["expires"] < time.monotonic()
-                    or proof["connection"] != connection or proof["id"] != data.get("id")):
-                raise ValueError("Bitte diese Verbindungsdaten zuerst erfolgreich prüfen (Test gilt 10 Minuten).")
-            identity = data.get("id") or secrets.token_hex(8)
-            if data.get("id") and identity not in self.devices:
+            identity = data.get("id")
+            existing = self.devices.get(identity) if identity else None
+            if identity and existing is None:
                 raise ValueError("Das Gerät wurde inzwischen gelöscht.")
-            if any(d["serial"] == proof["serial"] and key != identity for key, d in self.devices.items()):
+            endpoint_keys = ("profile", "host", "port", "unit")
+            unchanged = existing is not None and all(
+                connection[key] == existing["connection"][key] for key in endpoint_keys)
+            proof = self._proofs.get(data.get("proof", ""))
+            valid_proof = (proof is not None and proof["expires"] >= time.monotonic()
+                           and proof["connection"] == connection and proof["id"] == identity)
+            if not unchanged and not valid_proof:
+                raise ValueError("Neue oder geänderte WR-Verbindungsdaten bitte zuerst erfolgreich prüfen.")
+            if valid_proof:
+                serial, model, test_result = proof["serial"], proof["model"], proof["result"]
+            else:
+                serial, model, test_result = existing["serial"], existing["model"], existing["test_result"]
+            if existing is not None and serial != existing["serial"]:
+                raise ValueError("Die Geräteidentität stimmt nicht mit dem gespeicherten WR überein.")
+            identity = identity or secrets.token_hex(8)
+            if any(d["serial"] == serial and key != identity for key, d in self.devices.items()):
                 raise ValueError("Dieser Wechselrichter ist bereits angelegt.")
             device = {"id": identity, "connection": connection, "categories": categories,
-                      "serial": proof["serial"], "model": proof["model"],
-                      "test_result": proof["result"]}
+                      "serial": serial, "model": model, "test_result": test_result}
             candidate = deepcopy(self.devices)
             candidate[identity] = device
+            progress("save_config", "Kategorien und Einstellungen werden dauerhaft gespeichert.")
             await asyncio.to_thread(self.store.write, candidate)
             self.devices = candidate
-            self._proofs.pop(data["proof"])
+            if valid_proof:
+                self._proofs.pop(data["proof"], None)
             self._cancel_retry(identity)
             self._desired.pop(identity, None)
             self._pending.discard(identity)
-            self.runtime[identity] = {"status": "gespeichert", "current": proof["result"]["after"]}
-        self.trigger(identity)
-        return deepcopy(device)
+            state = self.runtime.setdefault(identity, {})
+            state["status"] = "gespeichert"
+            if valid_proof:
+                state["current"] = proof["result"]["after"]
+            # A save is an explicit reconciliation event, even if the target is
+            # unchanged: detect manual drift by reading the real inverter.
+            await self._evaluate_locked(identity, force=True, progress=progress)
+            state = self.runtime[identity]
+            applied = state["status"] in ("gesetzt", "bereits korrekt")
+            outcome = ("written" if state["status"] == "gesetzt" else
+                       "already_correct" if applied else
+                       "retry_pending" if state["status"] == "fehler" else "paused")
+            if applied:
+                message = (f"Einstellungen gespeichert. Backup-SOC auf {state['current']} % gesetzt und zurückgelesen."
+                           if outcome == "written" else
+                           f"Einstellungen gespeichert. Backup-SOC am WR ist bereits korrekt: {state['current']} %. Kein Schreiben nötig.")
+            elif outcome == "retry_pending":
+                message = "Einstellungen gespeichert. SOC-Abgleich fehlgeschlagen; Wiederholung in 30 Sekunden. " + state["error"]
+            else:
+                message = "Einstellungen gespeichert. Automatischer SOC-Abgleich pausiert: " + state["error"]
+            result = {**deepcopy(device), "save_result": {
+                "saved": True, "applied": applied, "outcome": outcome, "message": message,
+                "category": state.get("category"), "desired": state.get("desired"),
+                "current": state.get("current"), "warning_level": state.get("warning_level"),
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }}
+            progress("complete", message)
+            return result
+
+    async def start_save(self, data):
+        connection = normalize_connection(data["connection"])
+        categories = validate_categories(data["categories"])
+        payload = {"id": data.get("id"), "connection": connection,
+                   "categories": categories, "proof": data.get("proof")}
+        fingerprint = json.dumps(payload, sort_keys=True)
+        now = time.monotonic()
+        self._save_jobs = {key: job for key, job in self._save_jobs.items()
+                           if job["state"] in ("queued", "running") or now-job["created"] < 600}
+        for key, job in self._save_jobs.items():
+            if job["state"] in ("queued", "running") and job["fingerprint"] == fingerprint:
+                return self.save_status(key)
+        if len(self._save_jobs) >= 64:
+            raise ValueError("Bitte laufende Speichervorgänge abwarten.")
+        identity = secrets.token_urlsafe(24)
+        job = {"id": identity, "created": now, "state": "queued", "stage": "queued",
+               "message": "Speichern wartet auf freie Kommunikation.", "fingerprint": fingerprint,
+               "result": None, "error": ""}
+        self._save_jobs[identity] = job
+
+        def progress(stage, message):
+            job.update(state="running", stage=stage, message=message)
+
+        async def run():
+            try:
+                result = await self.save(payload, progress)
+                job.update(state="complete", stage="complete", result=result,
+                           message=result["save_result"]["message"])
+            except (ValueError, KeyError, TypeError, OSError, ModbusError) as err:
+                job.update(state="failed", error=str(err), message=str(err))
+            except asyncio.CancelledError:
+                job.update(state="failed", message="Speichern beim App-Stopp abgebrochen. Gespeicherten Stand nach dem Neustart prüfen.")
+                raise
+            except Exception:
+                LOGGER.exception("Unerwarteter Speicherfehler")
+                job.update(state="failed", error="Interner Speicherfehler. Gespeicherten Stand und App-Protokoll prüfen.",
+                           message="Interner Speicherfehler. Gespeicherten Stand und App-Protokoll prüfen.")
+
+        task = asyncio.create_task(run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return self.save_status(identity)
+
+    def save_status(self, identity):
+        job = self._save_jobs.get(identity)
+        if job is None:
+            raise ValueError("Speichervorgang nicht mehr vorhanden. Gespeicherten Stand nach einem App-Neustart prüfen.")
+        return {**{key: deepcopy(job[key]) for key in ("id", "state", "stage", "message", "result", "error")},
+                "elapsed": round(time.monotonic()-job["created"], 1)}
 
     async def delete(self, identity):
         async with self._lock:
@@ -272,7 +363,7 @@ class Manager:
         except Exception:
             LOGGER.exception("Unerwarteter Steuerungsfehler für Gerät %s", identity)
 
-    async def _evaluate_locked(self, identity):
+    async def _evaluate_locked(self, identity, *, force=False, progress=None):
         if self._stopped or identity not in self.devices:
             return
         device = self.devices[identity]
@@ -284,7 +375,7 @@ class Manager:
             self._cancel_retry(identity)
             state.update(status="pausiert", error="Wetterstandort/DWD-Daten fehlen oder Monat ohne Kategorie. Kommunikationsprüfung bleibt möglich.")
             return
-        if desired != self._desired.get(identity):
+        if force or desired != self._desired.get(identity):
             self._desired[identity] = desired
             self._pending.add(identity)
             self._cancel_retry(identity)
@@ -294,7 +385,12 @@ class Manager:
         if identity in self._retry:
             return
         try:
-            actual, written = await self.factory(device["connection"], device["serial"]).apply(desired)
+            adapter = self.factory(device["connection"], device["serial"])
+            if progress:
+                progress("read_soc", f"Aktuell gültiger Sollwert: {desired} %. Backup-SOC am WR wird geprüft.")
+                if hasattr(adapter, "set_progress"):
+                    adapter.set_progress(progress)
+            actual, written = await adapter.apply(desired)
         except ModbusError as err:
             state.update(status="fehler", error=str(err))
             LOGGER.warning("%s: %s; Wiederholung in 30 Sekunden", device["connection"]["name"], err)

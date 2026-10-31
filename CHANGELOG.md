@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## V0.1.4
+
+- Kategorieänderungen an gespeicherten Geräten können ohne erneuten Kommunikationstest gespeichert werden.
+- Nur neue oder geänderte WR-IP, Port, Geräte-ID oder Geräteprofile erfordern weiterhin eine neue Prüfbestätigung.
+- Jeder Speichervorgang ermittelt Monat und DWD-Warnlage neu und liest den tatsächlichen Backup-SOC.
+- Ein abweichender SOC wird geschrieben und zurückgelesen; bei bereits korrektem Wert kein Schreibzugriff.
+- Gespeicherte Einstellungen und der Ergebnisstatus des SOC-Abgleichs werden getrennt angezeigt.
+- Bei Modbus-Fehlern bleiben die Regeln gespeichert und ein Retry nach 30 Sekunden wird geplant.
+- Hintergrund-Speicherauftrag mit Fortschritt und zusätzlichen Backend-/Frontendtests.
+
+
 ## V0.1.3
 
 - Profil zu „Sungrow SH über iHomeManager“ korrigiert.

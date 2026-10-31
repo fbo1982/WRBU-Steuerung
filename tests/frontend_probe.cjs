@@ -14,10 +14,16 @@ class Element {
   addEventListener(name,callback){this.listeners[name]=callback;}
   reportValidity(){return true;}
   scrollIntoView(){}
-  querySelectorAll(){return [];}
+  querySelectorAll(selector){
+    const all=[];
+    const visit=node=>{for(const child of node.children||[]){all.push(child);visit(child);}};
+    visit(this);
+    if(selector==="input:checked")return all.filter(node=>node.type==="checkbox"&&node.checked);
+    return Object.values(this.elements||{});
+  }
 }
 
-async function setup(probeReply, pollReply) {
+async function setup(probeReply, pollReply, settings={}) {
   const nodes={};
   const get=id=>nodes[id]??=(new Element());
   get('category-editor').hidden=true;
@@ -25,9 +31,13 @@ async function setup(probeReply, pollReply) {
   form.elements=Object.fromEntries(['name','profile','host','port','unit'].map(key=>[key,new Element()]));
   form.reportValidity=()=>{throw new Error('Do not validate unrelated hidden fields');};
   const calls=[];
-  const status={version:'0.1.3',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+  const status={version:'0.1.4',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
     profiles:{sungrow_sh:'Sungrow SH'},default_categories:[{name:'Alle',months:[1,2,3,4,5,6,7,8,9,10,11,12],normal_soc:25,warning_soc:60}]};
-  let polls=0;
+  let polls=0, savePayload=null;
+  const existing={id:"existing",connection:{name:"Haus",profile:"sungrow_sh",host:"192.0.2.10",port:502,unit:1},
+    categories:structuredClone(status.default_categories),model:"SH25T",serial:"SN001",
+    test_result:{before:25,after:25,success:true},runtime:{current:25}};
+  if(settings.existing)status.devices=[existing];
   const context=vm.createContext({
     document:{getElementById:get,createElement:()=>new Element(),createTextNode:text=>({textContent:text}),activeElement:null},
     AbortController,structuredClone,Date,console,confirm:()=>true,
@@ -37,17 +47,29 @@ async function setup(probeReply, pollReply) {
       if(url==='api/status')return {ok:true,status:200,json:async()=>structuredClone(status)};
       if(url==='api/probes')return probeReply(nodes);
       if(url.startsWith('api/probes/'))return pollReply(++polls,nodes);
-      if(url==='api/devices')return {ok:true,status:200,json:async()=>({id:'saved'})};
+      if(url==='api/saves'){
+        savePayload=JSON.parse(options.body);
+        return {ok:true,status:202,json:async()=>({id:'save1',state:'queued',stage:'queued',message:'Warten'})};
+      }
+      if(url==='api/saves/save1')return {ok:true,status:200,json:async()=>({
+        id:'save1',state:'complete',stage:'complete',result:{
+          ...existing,id:savePayload.id||'saved',connection:savePayload.connection,categories:savePayload.categories,
+          save_result:{saved:true,applied:!settings.savePaused,outcome:settings.savePaused?'paused':'written',
+            message:settings.savePaused?'Einstellungen gespeichert. SOC-Abgleich pausiert.':'Einstellungen gespeichert. Backup-SOC auf 25 % gesetzt und zurückgelesen.',
+            category:'Alle',desired:settings.savePaused?null:25,current:25,warning_level:settings.savePaused?null:'0'}
+        }
+      })};
       throw new Error('Unexpected URL: '+url);
     },
   });
   const script=fs.readFileSync(path.join(__dirname,'../wrbu_steuerung/wrbu/static/app.js'),'utf8');
   vm.runInContext(script,context);
   await new Promise(setImmediate);
-  get('add-device').onclick();
+  if(settings.existing)vm.runInContext('openEditor(state.devices[0])',context);
+  else get('add-device').onclick();
   Object.assign(form.elements.name,{value:'Haus'});
   form.elements.host.value='192.0.2.10';form.elements.port.value='502';form.elements.unit.value='1';
-  return {nodes,get,form,calls};
+  return {nodes,get,form,calls,context};
 }
 
 const reply=data=>({ok:true,status:200,json:async()=>data});
@@ -80,7 +102,7 @@ test('successful verified result unlocks saving with its proof',async()=>{
   assert.match(ui.get('test-result').textContent,/Prüfung erfolgreich/);
   assert.equal(ui.get('save-device').disabled,false);
   await ui.form.onsubmit({preventDefault(){}});
-  const save=ui.calls.find(call=>call.url==='api/devices');
+  const save=ui.calls.find(call=>call.url==='api/saves');
   assert.equal(JSON.parse(save.options.body).proof,'verified-proof');
 });
 
@@ -111,4 +133,39 @@ test('polling the running job does not start another Modbus test',async()=>{
   assert.equal(ui.calls.filter(call=>call.url==='api/probes').length,1);
   assert.equal(ui.calls.filter(call=>call.url==='api/probes/job1').length,4);
   assert.equal(ui.get('save-device').disabled,false);
+});
+
+test('existing category changes can be adopted and saved without a new probe',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('normal-soc').value='40';
+  ui.get('apply-category').onclick();
+  assert.equal(ui.get('save-device').disabled,false);
+  await ui.form.onsubmit({preventDefault(){}});
+  const save=ui.calls.find(call=>call.url==='api/saves');
+  assert.ok(save);
+  assert.equal(JSON.parse(save.options.body).proof,null);
+  assert.equal(JSON.parse(save.options.body).categories[0].normal_soc,40);
+  assert.equal(ui.calls.filter(call=>call.url==='api/probes').length,0);
+  assert.match(ui.get('save-result').textContent,/gespeichert/);
+  assert.match(ui.get('save-result').textContent,/25 %/);
+  assert.equal(ui.get('save-result').hidden,false);
+});
+
+test('changed existing endpoint still blocks saving without a new probe',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  ui.form.elements.port.value='503';
+  ui.form.elements.port.listeners.input({});
+  assert.equal(ui.get('save-device').disabled,true);
+  await ui.form.onsubmit({preventDefault(){}});
+  assert.equal(ui.calls.filter(call=>call.url==='api/saves').length,0);
+  assert.match(ui.get('save-result').textContent,/Verbindungsdaten/);
+});
+
+test('paused weather reconciliation reports that settings were saved',async()=>{
+  const ui=await setup(queued,success,{existing:true,savePaused:true});
+  await ui.form.onsubmit({preventDefault(){}});
+  assert.match(ui.get('save-result').textContent,/Einstellungen gespeichert/);
+  assert.match(ui.get('save-result').textContent,/pausiert/);
+  assert.match(ui.get('save-result').className,/pending/);
 });

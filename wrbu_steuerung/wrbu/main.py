@@ -62,6 +62,13 @@ def create_app(manager, bridge, *, ingress_only=True):
     async def save(request):
         return web.json_response(await manager.save(await request.json()))
 
+    async def start_save(request):
+        return web.json_response(await manager.start_save(await request.json()), status=202)
+
+    async def save_status(request):
+        return web.json_response(manager.save_status(request.match_info["identity"]),
+                                 headers={"Cache-Control": "no-store"})
+
     async def delete(request):
         await manager.delete(request.match_info["identity"])
         return web.json_response({"success": True})
@@ -86,6 +93,8 @@ def create_app(manager, bridge, *, ingress_only=True):
     app.router.add_post("/api/probes", start_probe)
     app.router.add_get("/api/probes/{identity}", probe_status)
     app.router.add_post("/api/devices", save)
+    app.router.add_post("/api/saves", start_save)
+    app.router.add_get("/api/saves/{identity}", save_status)
     app.router.add_delete("/api/devices/{identity}", delete)
     app.router.add_static("/static/", STATIC, show_index=False)
     return app

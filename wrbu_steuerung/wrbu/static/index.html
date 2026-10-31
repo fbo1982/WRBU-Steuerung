@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.3"><script src="static/app.js?v=0.1.3" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.4"><script src="static/app.js?v=0.1.4" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.3</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.4</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div><button id="add-device">Wechselrichter anlegen</button></header>
 <main><div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
 <div id="notice" role="status" hidden></div>
@@ -42,7 +42,8 @@
 <p class="hint">Ausgegraute Monate gehören bereits zu einer anderen Kategorie.</p>
 <button type="button" id="apply-category">Kategorie übernehmen</button>
 <button type="button" id="cancel-category" class="secondary">Verwerfen</button></div>
-<div class="save-bar"><p id="save-reason" aria-live="polite">Bitte zuerst die Kommunikation erfolgreich prüfen. Der Test gilt zehn Minuten.</p><button id="save-device" type="submit" disabled>Speichern und aktivieren</button></div>
+<div id="save-result" class="result" role="status" aria-live="polite" hidden></div>
+<div class="save-bar"><p id="save-reason" aria-live="polite">Neue oder geänderte Verbindungsdaten bitte zuerst prüfen. Bestehende Kategorien können direkt gespeichert werden.</p><button id="save-device" type="submit" disabled>Speichern und SOC abgleichen</button></div>
 </form></section>
 <footer>V0.1.0 · Ereignisgesteuerte Modbus-Steuerung · Einstellungen bleiben bei App-Neustarts erhalten.</footer></main>
 </body></html>

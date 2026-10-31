@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const months = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 let state = null, draft = null, editingCategory = null, proof = null, checking = false;
 let proofTimer = null;
+let saving = false, lockedControls = [], proofSignature = null;
 let editorEpoch = 0, proofReason = "Bitte zuerst die Kommunikation erfolgreich prüfen.";
 const form = $("device-form");
 function element(tag, text, className) {
@@ -32,25 +33,55 @@ function connection() {
   ]));
 }
 function invalidateProof(reason) {
-  proof=null; clearTimeout(proofTimer);
+  proof=null; proofSignature=null; clearTimeout(proofTimer);
   proofReason=typeof reason==="string"?reason:"Verbindungsdaten geändert. Bitte erneut prüfen.";
   if(!checking)$("test-result").hidden=true;
   buttons();
 }
+function unchangedSavedConnection() {
+  if(!draft?.id)return false;
+  const current=connection();
+  return ["profile","host","port","unit"].every(key=>current[key]===draft.connection[key]);
+}
+function verifiedConnection() {
+  return Boolean(proof&&proofSignature===JSON.stringify(connection()));
+}
 function buttons() {
+  const verified=verifiedConnection(), reuse=unchangedSavedConnection();
   let reason;
-  if(checking)reason="Die Kommunikationsprüfung läuft. Bitte das Ergebnis abwarten.";
-  else if(!proof)reason=proofReason;
+  if(saving)reason="Einstellungen werden gespeichert und der aktuelle Backup-SOC wird abgeglichen.";
+  else if(checking)reason="Die Kommunikationsprüfung läuft. Bitte das Ergebnis abwarten.";
+  else if(!verified&&!reuse)reason=proofReason;
   else if(!draft?.categories.length)reason="Bitte mindestens eine Kategorie anlegen.";
   else if(!$("category-editor").hidden)reason="Bitte die Kategorie zuerst übernehmen oder verwerfen.";
-  else reason="Kommunikation erfolgreich geprüft. Einstellungen können gespeichert werden.";
+  else if(reuse)reason="Gespeicherte WR-Verbindung unverändert. Beim Speichern wird der aktuell gültige SOC am WR geprüft und bei Bedarf korrigiert.";
+  else reason="Kommunikation erfolgreich geprüft. Beim Speichern wird der aktuelle SOC-Sollwert abgeglichen.";
   $("save-reason").textContent=reason;
-  $("save-device").disabled=!proof||checking||!draft?.categories.length||!$("category-editor").hidden;
+  $("save-device").disabled=saving||checking||(!verified&&!reuse)||!draft?.categories.length||!$("category-editor").hidden;
+}
+function lockEditor(busy) {
+  if(busy){
+    lockedControls=[...form.querySelectorAll("input,select,button")].map(node=>[node,node.disabled]);
+    for(const [node] of lockedControls)node.disabled=true;
+  }else{
+    for(const [node,disabled] of lockedControls)node.disabled=disabled;
+    lockedControls=[];
+  }
+  $("close-editor").disabled=busy;
+  $("add-device").disabled=busy;
+}
+function showSave(text, failed=false, pending=false) {
+  $("save-result").hidden=false;
+  $("save-result").className="result"+(failed?" failed":pending?" pending":"");
+  $("save-result").textContent=text;
+}
+function categoryDraftChanged() {
+  showSave("Kategorieänderungen im Entwurf übernommen. Bitte „Speichern und SOC abgleichen“ wählen, um sie dauerhaft zu speichern und den WR zu prüfen.",false,true);
 }
 function validConnection() {
   return ["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity());
 }
-const probeStages={queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Denselben SOC einmal schreiben",readback:"SOC zurücklesen und vergleichen",complete:"Abgeschlossen"};
+const probeStages={save_config:"Einstellungen speichern",queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Denselben SOC einmal schreiben",readback:"SOC zurücklesen und vergleichen",complete:"Abgeschlossen"};
 function showProbe(text, failed=false) {
   $("test-result").className="result"+(failed?" failed":"");
   $("test-result").hidden=false;
@@ -80,6 +111,8 @@ function showProbeReport(job, target) {
     (success?"\nDu kannst den Wechselrichter jetzt speichern.":"\nSpeichern bleibt gesperrt. Bitte den angezeigten Grund prüfen."),!success);
 }
 function openEditor(device=null) {
+  if(saving)return;
+  $("save-result").hidden=true;
   editorEpoch++; notice(); invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen."); $("test-result").hidden=true;
   draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1},categories:structuredClone(state.default_categories)};
   $("editor-title").textContent=device?"Wechselrichter bearbeiten":"Wechselrichter anlegen";
@@ -112,6 +145,7 @@ function renderDevices() {
     const actions=element("div",undefined,"actions");
     const edit=element("button","Bearbeiten","secondary small");edit.onclick=()=>openEditor(device);
     const remove=element("button","Löschen","danger small");remove.onclick=async()=>{
+      if(saving)return;
       if(!confirm("Wechselrichter „"+device.connection.name+"“ und seine Regeln löschen? Der WR-Wert bleibt erhalten."))return;
       try{await api("api/devices/"+encodeURIComponent(device.id),{method:"DELETE"});await refresh();}catch(error){notice(error.message);}
     };actions.append(edit,remove);card.append(actions);list.append(card);
@@ -125,7 +159,8 @@ function renderCategories() {
     const actions=element("div",undefined,"actions");
     const edit=element("button","Bearbeiten","secondary small");edit.type="button";edit.onclick=()=>openCategory(index);
     const remove=element("button","Löschen","danger small");remove.type="button";remove.onclick=()=>{
-      draft.categories.splice(index,1);$("category-editor").hidden=true;renderCategories();
+      if(saving)return;
+      draft.categories.splice(index,1);$("category-editor").hidden=true;renderCategories();categoryDraftChanged();
     };actions.append(edit,remove);row.append(details,actions);list.append(row);
   });
   const used=new Set(draft.categories.flatMap(c=>c.months)),free=months.filter((_,i)=>!used.has(i+1));
@@ -134,6 +169,7 @@ function renderCategories() {
   buttons();
 }
 function openCategory(index=null) {
+  if(saving)return;
   editingCategory=index;
   const category=index===null?{name:"",months:[],normal_soc:25,warning_soc:60}:draft.categories[index];
   $("category-name").value=category.name;$("normal-soc").value=category.normal_soc;$("warning-soc").value=category.warning_soc;
@@ -149,16 +185,16 @@ $("apply-category").onclick=()=>{
   if(!Number.isInteger(category.normal_soc)||!Number.isInteger(category.warning_soc)||category.normal_soc<0||category.warning_soc>100||category.warning_soc<category.normal_soc) {notice("Bitte ganze SOC-Werte von 0 bis 100 eingeben. Die Warnreserve darf nicht niedriger sein.");return;}
   if(draft.categories.some((c,i)=>i!==editingCategory&&c.name.toLocaleLowerCase()===category.name.toLocaleLowerCase())) {notice("Dieser Kategoriename ist bereits vergeben.");return;}
   if(editingCategory===null)draft.categories.push(category);else draft.categories[editingCategory]=category;
-  $("category-editor").hidden=true;notice();renderCategories();
+  $("category-editor").hidden=true;notice();renderCategories();categoryDraftChanged();
 };
 $("cancel-category").onclick=()=>{$("category-editor").hidden=true;buttons();};
 $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
-$("close-editor").onclick=()=>{editorEpoch++;$("editor").hidden=true;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();};
+$("close-editor").onclick=()=>{if(saving)return;editorEpoch++;$("editor").hidden=true;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();};
 for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
 form.elements.profile.addEventListener("change",updateConnectionHint);
 $("test-device").onclick=async()=>{
-  if(!validConnection()||checking)return;
+  if(!validConnection()||checking||saving)return;
   const epoch=editorEpoch, target=connection(), submitted=JSON.stringify(target), id=draft.id;
   checking=true;invalidateProof("Prüfung läuft.");$("test-device").disabled=true;$("test-device").textContent="Prüfung läuft …";notice();
   showProbe("Prüfung wird gestartet …\n"+probeTarget(target)+"\nEs wird kein Wert verändert: Der gelesene Backup-SOC wird einmal identisch zurückgeschrieben.");
@@ -177,7 +213,7 @@ $("test-device").onclick=async()=>{
     if(draft.id!==id||JSON.stringify(connection())!==submitted)throw new Error("Verbindungsdaten während der Prüfung geändert. Dieses Ergebnis erlaubt kein Speichern; bitte die neuen Daten prüfen.");
     showProbeReport(job,target);
     if(job.state==="complete"&&job.result?.success&&job.proof){
-      proof=job.proof;proofReason="Prüfung erfolgreich.";
+      proof=job.proof;proofSignature=submitted;proofReason="Prüfung erfolgreich.";
       proofTimer=setTimeout(()=>{proof=null;proofReason="Prüfung abgelaufen. Bitte erneut prüfen.";buttons();$("test-result").textContent+="\nDie Prüfbestätigung ist inzwischen abgelaufen.";},600000);
     } else {
       proof=null;proofReason="Prüfung fehlgeschlagen. Den Grund findest du direkt unter „Kommunikation prüfen“.";
@@ -194,10 +230,42 @@ $("test-device").onclick=async()=>{
   }
 };
 form.onsubmit=async event=>{
-  event.preventDefault();if(!proof||checking||!$("category-editor").hidden||!validConnection())return;
-  $("save-device").disabled=true;notice();
-  try{await api("api/devices",{method:"POST",body:JSON.stringify({id:draft.id,connection:connection(),categories:draft.categories,proof})});$("editor").hidden=true;draft=null;invalidateProof();await refresh();}
-  catch(error){notice(error.message);buttons();}
+  event.preventDefault();
+  if(saving||checking||!$("category-editor").hidden||!validConnection())return;
+  if(!verifiedConnection()&&!unchangedSavedConnection()){
+    showSave("Neue oder geänderte Verbindungsdaten bitte zuerst erfolgreich prüfen.",true);buttons();return;
+  }
+  const payload={id:draft.id,connection:connection(),categories:structuredClone(draft.categories),proof:verifiedConnection()?proof:null};
+  saving=true;lockEditor(true);buttons();notice();
+  $("save-device").textContent="Speichern läuft …";
+  showSave("Einstellungen werden gespeichert. Der aktuell gültige SOC wird anhand von Monat und DWD-Lage ermittelt und am WR geprüft.");
+  $("save-result").scrollIntoView({behavior:"smooth",block:"nearest"});
+  try{
+    let job=await api("api/saves",{method:"POST",body:JSON.stringify(payload)});
+    const started=Date.now();
+    while(job.state==="queued"||job.state==="running"){
+      showSave("Speichern und SOC-Abgleich laufen · "+Math.floor(job.elapsed||0)+" s\nSchritt: "+(probeStages[job.stage]||job.stage)+"\n"+job.message);
+      if(Date.now()-started>90000)throw new Error("Der Vorgang läuft länger als erwartet und kann im Hintergrund weiterlaufen. Bitte den gespeicherten Stand prüfen.");
+      await new Promise(resolve=>setTimeout(resolve,700));
+      job=await api("api/saves/"+encodeURIComponent(job.id));
+    }
+    if(job.state!=="complete"||!job.result?.save_result?.saved)throw new Error(job.error||job.message||"Speichern wurde nicht bestätigt. Bitte den gespeicherten Stand prüfen.");
+    const device=job.result, result=device.save_result;
+    draft=structuredClone(device);
+    for(const [key,value] of Object.entries(draft.connection))if(form.elements[key])form.elements[key].value=value;
+    proof=null;proofSignature=null;clearTimeout(proofTimer);
+    proofReason="Gespeicherte WR-Verbindung kann für weitere Kategorieänderungen verwendet werden.";
+    const details="\nKategorie: "+(result.category||"–")+" · DWD-Stufe: "+(result.warning_level??"unbekannt")+
+      "\nAktuell gültiger Sollwert: "+(result.desired??"–")+" % · Bestätigter Backup-SOC: "+(result.current??"–")+" %"+
+      (result.checked_at?"\nStand des Speicherabgleichs: "+new Date(result.checked_at).toLocaleString("de-DE"):"");
+    showSave(result.message+details,false,!result.applied);
+    await refresh();
+  }catch(error){
+    showSave("Speichervorgang nicht vollständig bestätigt\n"+error.message+"\nBitte den gespeicherten Stand kontrollieren; die WR-Prüfung kann im Hintergrund weiterlaufen.",true);
+  }finally{
+    saving=false;lockEditor(false);$("save-device").textContent="Speichern und SOC abgleichen";buttons();
+    $("save-result").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
 };
 function renderWeather(){
   const weather=state.weather;
@@ -243,7 +311,7 @@ async function refresh(){
     $("version").textContent="V"+state.version;
     $("connection").className="banner"+(state.ha_ready?" ok":"");
     $("connection").textContent=state.ha_ready?"Home Assistant verbunden · Zeitzone "+state.timezone:"Zeitzone "+state.timezone+" · WR-Prüfung und direkte DWD-Abfrage sind unabhängig von Home Assistant.";
-    $("add-device").disabled=false;
+    $("add-device").disabled=saving;
     renderDevices();
     renderWeather();
   }catch(error){$("connection").className="banner";$("connection").textContent="App nicht erreichbar: "+error.message;}
