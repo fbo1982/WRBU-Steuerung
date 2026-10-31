@@ -6,18 +6,43 @@ bekommt seine eigenen Kategorien und seinen DWD-Sensor.
 
 ## Einrichtung
 
+**WRBU Steuerung ist eine Integration.** Das Repository gehört nicht in den
+Home-Assistant-App-/Add-on-Store. Dessen Meldung „is not a valid app repository“
+ist bei diesem Repository zu erwarten. Die Installation erfolgt über HACS oder
+durch Kopieren des Integrationsordners.
+
+### Installation über HACS
+
+Voraussetzung: [HACS ist bereits eingerichtet](https://www.hacs.xyz/docs/use/).
+
+1. **HACS** in Home Assistant öffnen.
+2. Oben rechts **⋮ → Benutzerdefinierte Repositories / Custom repositories** öffnen.
+3. Repository `https://github.com/fbo1982/WRBU-Steuerung` eintragen.
+4. Als Typ **Integration** auswählen und hinzufügen.
+5. In HACS nach **WRBU Steuerung** suchen und herunterladen.
+6. Home Assistant vollständig neu starten.
+
+Das Repository wird als benutzerdefiniertes Repository verwendet; eine Aufnahme
+in die HACS-Standardliste ist nicht erforderlich. Ohne GitHub-Release verwendet
+HACS den Standardbranch `main`.
+
+### Alternative: manuelle Installation ohne HACS
+
+Den Ordner `custom_components/wrbu_steuerung` aus dem Repository nach
+`/config/custom_components/wrbu_steuerung` kopieren und Home Assistant neu starten.
+
+### Integration einrichten
+
 1. Die offizielle DWD-Integration für deine Region einrichten. Für Stockstadt am
    Rhein die Attribute `region_name`/`region_id` des Sensors prüfen.
-2. Den Ordner `custom_components/wrbu_steuerung` nach
-   `/config/custom_components/wrbu_steuerung` kopieren und HA neu starten.
-3. Einstellungen → Geräte & Dienste → Integration hinzufügen → **WRBU Steuerung**.
-4. Gerätenamen, Geräteprofil, IP, TCP-Port, Modbus-Geräte-ID und offiziellen
+2. **Einstellungen → Geräte & Dienste → Integration hinzufügen → WRBU Steuerung**.
+3. Gerätenamen, Geräteprofil, IP, TCP-Port, Modbus-Geräte-ID und offiziellen
    DWD-Sensor **Current warning level** auswählen. Standard-Port 502, ID 1.
-5. Beim Fortfahren läuft der Test. Die nächste Seite zeigt Modell, Seriennummer,
+4. Beim Fortfahren läuft der Test. Die nächste Seite zeigt Modell, Seriennummer,
    gelesenen Backup-SOC, Schreibversuch, Schreibbestätigung und Rücklesewert.
    Bei einem Fehler ist Speichern gesperrt. Zurück zu den Verbindungsdaten,
    korrigieren und erneut absenden. Kein automatischer Test-Schreib-Retry.
-6. Kategorien anpassen, anschließend **Speichern und aktivieren** wählen.
+5. Kategorien anpassen, anschließend **Speichern und aktivieren** wählen.
 
 Die drei bisherigen Saisonkategorien sind als bearbeitbare Ausgangswerte
 vorbelegt. Die spätere Verwaltung erfolgt über **Konfigurieren** am
