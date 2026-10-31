@@ -56,6 +56,11 @@ function showProbe(text, failed=false) {
   $("test-result").hidden=false;
   $("test-result").textContent=text;
 }
+function updateConnectionHint() {
+  $("connection-hint").textContent=form.elements.profile.value==="sungrow_sh_with_ihm"
+    ?"iHomeManager-Weiterleitung: IP des iHomeManagers, einen freigeschalteten Modbus-Port (z. B. 503) und die Geräte-ID des weitergeleiteten WR (z. B. 1) eingeben. Die Kommunikationsprüfung bestätigt den SH-Zugriff."
+    :"Direkter SH-Zugriff: IP des Wechselrichters/WiNet verwenden. Wenn der direkte Zugriff bei angeschlossenem iHomeManager gesperrt ist, das Profil „Sungrow SH über iHomeManager“ mit dessen IP und Weiterleitungsport wählen.";
+}
 function probeTarget(connection) {
   return "Ziel: "+connection.host+":"+connection.port+" · Geräte-ID "+connection.unit;
 }
@@ -82,6 +87,7 @@ function openEditor(device=null) {
     const option=element("option",label);option.value=value;return option;
   }));
   for (const [key,value] of Object.entries(draft.connection)) if(form.elements[key]) form.elements[key].value=value;
+  updateConnectionHint();
   $("editor").hidden=false; $("category-editor").hidden=true;
   renderCategories(); $("editor").scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -150,6 +156,7 @@ $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
 $("close-editor").onclick=()=>{editorEpoch++;$("editor").hidden=true;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();};
 for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
+form.elements.profile.addEventListener("change",updateConnectionHint);
 $("test-device").onclick=async()=>{
   if(!validConnection()||checking)return;
   const epoch=editorEpoch, target=connection(), submitted=JSON.stringify(target), id=draft.id;

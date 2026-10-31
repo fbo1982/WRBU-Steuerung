@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.2
+# WRBU Steuerung · V0.1.3
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -117,10 +117,17 @@ hängen vom WR, seinen Einstellungen und dem tatsächlichen Batterieladezustand 
 
 - **Sungrow SH – direkter Zugriff:** hinterlegte SH-RS-/SH-RT-/SH-T-Modellliste,
   mit Modell-/Seriennummernprüfung.
-- **Sungrow SH mit iHomeManager – direkt auf WR zugreifen:** WR-/WiNet-IP
-  verwenden, nicht die IP des iHomeManagers.
-- **Über iHomeManager selbst:** weiterhin ausdrücklich nicht unterstützt;
-  es fehlt eine belegte, implementierte Backup-SOC-Zuordnung.
+- **Sungrow SH über iHomeManager:** die **IP des iHomeManagers** und einen
+  freigeschalteten Weiterleitungsport verwenden. Ein bestätigter Aufbau ist
+  **Port 503, Geräte-ID 1**. Port und Geräte-ID bleiben installationsabhängig
+  und werden nicht automatisch überschrieben.
+  Bei angeschlossenem iHomeManager kann der direkte WR-Zugriff gesperrt sein.
+  Das Profil prüft die über den iHomeManager erreichbaren SH-Register genauso
+  wie beim direkten Zugriff, einschließlich Modell, Seriennummer und
+  Schreib-/Rückleseprüfung.
+- Das separate eigene EMS-Protokoll des iHomeManagers ist damit nicht
+  implementiert. Der frühere gesperrte native Eintrag wird nicht mehr als
+  auswählbares Profil angeboten. Die SH-Weiterleitung ist davon unabhängig.
 
 SH-Profil: Dokumentationsregister 13100, Modbus-Adresse 13099, U16, Prozent,
 FC03/FC06. Unbekannte Modelle und geänderte Seriennummern werden vor dem
@@ -134,7 +141,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.2** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.3** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

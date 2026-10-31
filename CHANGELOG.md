@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## V0.1.3
+
+- Profil zu „Sungrow SH über iHomeManager“ korrigiert.
+- Bei iHomeManager-Weiterleitung ausdrücklich dessen IP statt der WR-IP verwenden.
+- Bestätigter Aufbau: freigeschalteter Port 503 und Geräte-ID 1; Werte bleiben frei konfigurierbar.
+- Profilabhängige Verbindungshinweise; vorhandene IPs, Ports und Geräte-IDs werden nicht überschrieben.
+- Nicht implementiertes eigenes iHM-EMS-Profil aus der Auswahl entfernt; SH-Weiterleitung bleibt nutzbar.
+- Bestehender geprüfter SH-Schreibpfad und gespeicherte Geräte bleiben erhalten.
+
+
 ## V0.1.2
 
 - Kommunikationsprüfungen zeigen Fortschritt, Ziel und Ergebnis direkt unter dem Prüfen-Knopf.

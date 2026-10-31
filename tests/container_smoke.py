@@ -8,9 +8,9 @@ for attempt in range(45):
     try:
         with urlopen("http://127.0.0.1:18099/health", timeout=2) as response:
             data = json.load(response)
-        if data != {"status": "ok", "version": "0.1.2"}:
+        if data != {"status": "ok", "version": "0.1.3"}:
             raise RuntimeError(f"Unexpected app response: {data}")
-        print("App container started successfully: V0.1.2")
+        print("App container started successfully: V0.1.3")
         break
     except (URLError, TimeoutError, ConnectionError):
         time.sleep(1)

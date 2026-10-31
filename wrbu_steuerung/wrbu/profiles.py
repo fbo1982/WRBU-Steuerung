@@ -139,8 +139,9 @@ def create_adapter(connection: dict, expected_serial: str | None = None) -> Back
         return SungrowSH(connection, expected_serial)
     if profile == "sungrow_ihm_native":
         raise ModbusError(
-            "Für den iHomeManager ist hier kein belegtes Backup-SOC-Register verfügbar. "
-            "Bitte SH-Profil mit direkter IP des Wechselrichters/WiNet wählen, nicht die iHM-IP."
+            "Das eigene iHomeManager-EMS-Protokoll ist nicht implementiert. "
+            "Für weitergeleitete SH-Register bitte Sungrow SH über iHomeManager wählen "
+            "und die iHomeManager-IP mit freigeschaltetem Weiterleitungsport verwenden."
         )
     raise ModbusError("Unbekanntes Geräteprofil")
 

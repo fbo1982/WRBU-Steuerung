@@ -17,8 +17,7 @@ from .modbus import ModbusError
 LOGGER = logging.getLogger(__name__)
 PROFILES = {
     "sungrow_sh": "Sungrow SH – direkter Zugriff",
-    "sungrow_sh_with_ihm": "Sungrow SH mit iHomeManager – direkt auf WR zugreifen",
-    "sungrow_ihm_native": "Über iHomeManager selbst – Backup-SOC derzeit nicht unterstützt",
+    "sungrow_sh_with_ihm": "Sungrow SH über iHomeManager",
 }
 DEFAULT_CATEGORIES = [
     {"name": "Winter", "months": [1, 12], "normal_soc": 40, "warning_soc": 60},

@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.2"><script src="static/app.js?v=0.1.2" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.3"><script src="static/app.js?v=0.1.3" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.2</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.3</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div><button id="add-device">Wechselrichter anlegen</button></header>
 <main><div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
 <div id="notice" role="status" hidden></div>
@@ -29,7 +29,7 @@
 <label>Modbus-Geräte-ID<input name="unit" type="number" min="1" max="247" value="1" required></label>
 
 </div>
-<p class="hint">Für Anlagen mit iHomeManager die IP des Wechselrichters/WiNet verwenden. Der native Backup-SOC-Zugriff über den iHomeManager ist noch nicht unterstützt.</p>
+<p id="connection-hint" class="hint">Direkter SH-Zugriff: IP des Wechselrichters/WiNet verwenden. Für die Weiterleitung über iHomeManager das entsprechende Profil auswählen.</p>
 <div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Backup-SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>
 <div id="test-result" class="result" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 <hr><div class="section-title"><div><h2>Kategorien</h2><p>Jeder Monat kann genau einer Kategorie zugeordnet werden.</p></div><button type="button" id="add-category" class="secondary">Kategorie hinzufügen</button></div>
