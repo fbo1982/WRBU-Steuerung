@@ -30,6 +30,7 @@ class TestResult:
     write_acknowledged: bool = False
     error: str = ""
     checked_at: str = ""
+    stage: str = ""
 
     def as_dict(self):
         return asdict(self)
@@ -50,6 +51,10 @@ class SungrowSH:
         self.connection = connection
         self.expected_serial = expected_serial
         self.session_factory = session_factory
+        self.progress = lambda stage, message: None
+
+    def set_progress(self, callback):
+        self.progress = callback
 
     def session(self):
         return self.session_factory(
@@ -57,9 +62,11 @@ class SungrowSH:
         )
 
     async def _identify(self, session) -> tuple[str, str]:
+        self.progress("model", "Wechselrichtermodell wird gelesen.")
         code = (await session.read(4999, input_register=True))[0]
         if code not in SH_MODELS:
             raise ModbusError(f"Kein unterstützter SH-Gerätetyp: 0x{code:04X}")
+        self.progress("serial", "Seriennummer wird gelesen.")
         words = await session.read(4989, 10, input_register=True)
         raw = b"".join(w.to_bytes(2, "big") for w in words)
         try:
@@ -73,6 +80,7 @@ class SungrowSH:
         return SH_MODELS[code], serial
 
     async def identify(self) -> tuple[str, str]:
+        self.progress("connect", "Verbindung zum Wechselrichter wird aufgebaut.")
         async with self.session() as session:
             return await self._identify(session)
 
@@ -86,16 +94,26 @@ class SungrowSH:
         """Exactly one same-value write, no automatic write retry during setup."""
         result = TestResult(checked_at=datetime.now(timezone.utc).isoformat())
         try:
+            result.stage = "connect"
+            self.progress("connect", "Verbindung für die Backup-SOC-Prüfung wird aufgebaut.")
             async with self.session() as session:
+                result.stage = "identity"
                 result.model, result.serial = await self._identify(session)
+                result.stage = "read_soc"
+                self.progress("read_soc", "Aktueller Backup-SOC wird gelesen.")
                 result.before = await self._read_soc(session)
+                result.stage = "write_soc"
+                self.progress("write_soc", f"Derselbe Backup-SOC ({result.before} %) wird einmal zurückgeschrieben.")
                 result.write_attempted = True
                 await session.write(self.ADDRESS, result.before)
                 result.write_acknowledged = True
+                result.stage = "readback"
+                self.progress("readback", "Backup-SOC wird erneut gelesen und verglichen.")
                 result.after = await self._read_soc(session)
                 if result.after != result.before:
                     raise ModbusError("Rücklesewert weicht vom geschriebenen Wert ab")
                 result.success = True
+                result.stage = "complete"
         except ModbusError as err:
             result.error = str(err)
         return result

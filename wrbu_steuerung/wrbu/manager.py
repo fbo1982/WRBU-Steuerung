@@ -11,7 +11,7 @@ import secrets
 import time
 
 from .policy import validate_categories, target_for
-from .profiles import create_adapter
+from .profiles import TestResult, create_adapter
 from .modbus import ModbusError
 
 LOGGER = logging.getLogger(__name__)
@@ -98,6 +98,7 @@ class Manager:
         self._tasks = set()
         self._queued = set()
         self._lock = asyncio.Lock()
+        self._probe_jobs = {}
         self._stopped = False
 
     def now(self):
@@ -109,7 +110,8 @@ class Manager:
             devices.append({**deepcopy(device), "runtime": deepcopy(self.runtime.get(identity, {}))})
         return devices
 
-    async def probe(self, data):
+    async def probe(self, data, progress=None):
+        progress = progress or (lambda stage, message: None)
         connection = normalize_connection(data["connection"])
         editing = data.get("id")
         if editing is not None and editing not in self.devices:
@@ -117,12 +119,19 @@ class Manager:
         async with self._lock:
             self._proofs = {k: v for k, v in self._proofs.items() if v["expires"] > time.monotonic()}
             adapter = self.factory(connection)
+            if hasattr(adapter, "set_progress"):
+                adapter.set_progress(progress)
+            progress("connect", "Verbindung und Geräteidentität werden geprüft.")
             model, serial = await adapter.identify()
             if any(d["serial"] == serial and key != editing for key, d in self.devices.items()):
                 raise ValueError("Dieser Wechselrichter ist bereits angelegt.")
             if editing and serial != self.devices[editing]["serial"]:
                 raise ValueError("Anderer Wechselrichter erkannt. Bitte als neues Gerät anlegen.")
-            result = await self.factory(connection, serial).probe()
+            adapter = self.factory(connection, serial)
+            if hasattr(adapter, "set_progress"):
+                adapter.set_progress(progress)
+            progress("read_soc", "Backup-SOC-Prüfung wird ausgeführt.")
+            result = await adapter.probe()
             report = result.as_dict()
             proof = None
             if result.success:
@@ -133,6 +142,59 @@ class Manager:
                     "id": editing, "result": report, "serial": serial, "model": model,
                 }
             return {"result": report, "proof": proof}
+
+    async def start_probe(self, data):
+        """Return immediately. Polling reads job memory and never repeats writes."""
+        connection = normalize_connection(data["connection"])
+        editing = data.get("id")
+        now = time.monotonic()
+        self._probe_jobs = {key: job for key, job in self._probe_jobs.items()
+                            if job["state"] in ("queued", "running") or now-job["created"] < 600}
+        for identity, job in self._probe_jobs.items():
+            if job["state"] in ("queued", "running") and job["connection"] == connection and job["editing"] == editing:
+                return self.probe_status(identity)
+        if len(self._probe_jobs) >= 64:
+            raise ValueError("Zu viele Prüfaufträge. Bitte laufende Prüfungen abwarten.")
+        identity = secrets.token_urlsafe(24)
+        job = {"id": identity, "connection": connection, "editing": editing,
+               "created": now, "state": "queued", "stage": "queued",
+               "message": "Prüfung wartet auf freie Kommunikation.", "result": None, "proof": None}
+        self._probe_jobs[identity] = job
+
+        def progress(stage, message):
+            job.update(state="running", stage=stage, message=message)
+
+        async def run():
+            try:
+                report = await self.probe({"connection": connection, "id": editing}, progress)
+                job.update(report)
+                success = report["result"]["success"]
+                job.update(state="complete" if success else "failed",
+                           stage=report["result"].get("stage") or job["stage"],
+                           message="Prüfung erfolgreich. Speichern ist jetzt möglich." if success else report["result"]["error"])
+            except (ModbusError, ValueError, KeyError, TypeError, OSError) as err:
+                result = TestResult(error=str(err) or "Kommunikationsprüfung fehlgeschlagen.",
+                                    stage=job["stage"], checked_at=datetime.now(timezone.utc).isoformat())
+                job.update(state="failed", result=result.as_dict(), proof=None, message=result.error)
+            except asyncio.CancelledError:
+                job.update(state="failed", proof=None, message="Prüfung beim App-Stopp abgebrochen.")
+                raise
+            except Exception:
+                LOGGER.exception("Unerwarteter Fehler in Kommunikationsprüfung %s", identity)
+                result = TestResult(error="Interner Prüfungsfehler. Details stehen im App-Protokoll.", stage=job["stage"])
+                job.update(state="failed", result=result.as_dict(), proof=None, message=result.error)
+
+        task = asyncio.create_task(run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return self.probe_status(identity)
+
+    def probe_status(self, identity):
+        job = self._probe_jobs.get(identity)
+        if job is None:
+            raise ValueError("Prüfauftrag nicht mehr vorhanden. Die App wurde eventuell neu gestartet; bitte erneut prüfen.")
+        return {**{key: deepcopy(job[key]) for key in ("id", "state", "stage", "message", "result", "proof")},
+                "elapsed": round(time.monotonic()-job["created"], 1)}
 
     async def save(self, data):
         connection = normalize_connection(data["connection"])

@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.1
+# WRBU Steuerung · V0.1.2
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -101,6 +101,12 @@ Nur ein erfolgreicher Test erlaubt das Speichern. Der Test gilt zehn Minuten,
 ist an die WR-Verbindungsdaten gebunden und wird beim Speichern verbraucht.
 Änderungen am Wetterstandort beeinflussen diesen Test nicht.
 
+Die Prüfung zeigt ihren aktuellen Schritt und die verstrichene Zeit direkt im Formular.
+Auch ein Fehler beim Verbindungsaufbau oder bei der Geräteerkennung erscheint dort.
+Der Speichern-Bereich erklärt zusätzlich, warum die Freigabe noch fehlt.
+Ein Hintergrundauftrag verhindert lange offene Browseraufrufe; seine Statusabfragen
+lesen nur den App-Speicher und lösen keine weiteren Modbus-Schreibversuche aus.
+
 Ein fehlgeschlagener Einrichtungstest wiederholt das Schreiben nicht automatisch.
 Der gleiche Wert bestätigt den Modbus-Ablauf, keine reale Notstromumschaltung.
 Bei einem Timeout nach einem tatsächlich ausgeführten Schreiben ist keine
@@ -128,7 +134,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.1** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.2** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

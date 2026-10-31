@@ -27,7 +27,9 @@ class ModbusSession:
         try:
             async with asyncio.timeout(self.timeout):
                 self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
-        except (OSError, TimeoutError) as err:
+        except TimeoutError as err:
+            raise ModbusError(f"Zeitüberschreitung: {self.host}:{self.port} ist innerhalb von {self.timeout:g} Sekunden nicht erreichbar. IP-Adresse und Port prüfen.") from err
+        except OSError as err:
             raise ModbusError(f"Verbindung fehlgeschlagen: {err}") from err
         return self
 
@@ -54,17 +56,24 @@ class ModbusSession:
                     header = await self.reader.readexactly(7)
                     tid, protocol, length, unit = struct.unpack(">HHHB", header)
                     if (tid, protocol, unit) != (self._transaction, 0, self.unit):
-                        raise ModbusError("Antwort gehört nicht zur Anfrage")
+                        raise ModbusError(f"Antwort gehört nicht zur Anfrage (Geräte-ID erwartet {self.unit}, empfangen {unit}; Transaktion {tid}/{self._transaction}; Protokoll {protocol}).")
                     if not 2 <= length <= 254:
                         raise ModbusError("Ungültige Modbus-Antwortlänge")
                     response = await self.reader.readexactly(length - 1)
-            except (OSError, TimeoutError, asyncio.IncompleteReadError) as err:
+            except TimeoutError as err:
+                raise ModbusError(f"Keine Modbus-Antwort innerhalb von {self.timeout:g} Sekunden (Geräte-ID {self.unit}, Funktion {function}, Adresse {address}). Geräte-ID und Modbus-Freigabe prüfen.") from err
+            except asyncio.IncompleteReadError as err:
+                raise ModbusError("Die Gegenstelle hat die Verbindung ohne vollständige Modbus-Antwort geschlossen.") from err
+            except OSError as err:
                 raise ModbusError(f"Modbus-Übertragung fehlgeschlagen: {err}") from err
             finally:
                 self._next_request = loop.time() + self.gap
             if response[0] == (function | 0x80):
                 code = response[1] if len(response) == 2 else "?"
-                raise ModbusError(f"Gerät meldet Modbus-Ausnahme {code}")
+                explanation = {1: "Funktion nicht unterstützt", 2: "Register nicht verfügbar",
+                               3: "Wert ungültig", 4: "Gerätefehler", 6: "Gerät beschäftigt",
+                               11: "Gateway-Zielgerät antwortet nicht"}.get(code, "Anfrage abgewiesen")
+                raise ModbusError(f"Gerät meldet Modbus-Ausnahme {code}: {explanation} (Funktion {function}, Adresse {address}).")
             if response[0] != function:
                 raise ModbusError("Falscher Modbus-Funktionscode")
             return response

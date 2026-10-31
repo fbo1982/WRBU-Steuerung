@@ -1,3 +1,3 @@
 """WRBU Steuerung Home Assistant app."""
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 

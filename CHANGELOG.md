@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## V0.1.2
+
+- Kommunikationsprüfungen zeigen Fortschritt, Ziel und Ergebnis direkt unter dem Prüfen-Knopf.
+- Fehler schon beim Verbinden oder Erkennen des WR verschwinden nicht mehr oberhalb des sichtbaren Formulars.
+- Hintergrund-Prüfauftrag mit kurzen Statusabfragen statt eines langen offenen Browseraufrufs; Statusabfragen schreiben keine Register.
+- Laufende identische Prüfaufträge werden wiederverwendet; kein mehrfaches Test-Schreiben durch Statusabfragen.
+- Konkreter Sperrgrund am Speichern-Knopf; Freigabe weiterhin nur nach erfolgreichem Schreiben und Rücklesen.
+- Verständliche Timeout-/Modbus-Fehler und zusätzliche Frontend-Regressionstests.
+
+
 ## V0.1.1
 
 - WR-Kommunikationsprüfung und Speichern sind unabhängig von Wetterstandort, DWD-Sensor und HA-Verbindung.

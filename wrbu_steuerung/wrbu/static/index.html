@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css"><script src="static/app.js" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.2"><script src="static/app.js?v=0.1.2" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.1</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.2</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div><button id="add-device">Wechselrichter anlegen</button></header>
 <main><div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
 <div id="notice" role="status" hidden></div>
@@ -20,7 +20,7 @@
 <section id="devices" class="device-grid" aria-label="Wechselrichter"></section>
 <section id="editor" class="panel" hidden>
 <div class="section-title"><div><span class="eyebrow">GERÄTEVERWALTUNG</span><h2 id="editor-title">Wechselrichter anlegen</h2></div><button id="close-editor" class="secondary">Abbrechen</button></div>
-<form id="device-form">
+<form id="device-form" novalidate>
 <div class="fields">
 <label>Name<input name="name" maxlength="80" required placeholder="z. B. Hausanlage"></label>
 <label>Geräteprofil<select name="profile" required></select></label>
@@ -31,7 +31,7 @@
 </div>
 <p class="hint">Für Anlagen mit iHomeManager die IP des Wechselrichters/WiNet verwenden. Der native Backup-SOC-Zugriff über den iHomeManager ist noch nicht unterstützt.</p>
 <div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Backup-SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>
-<div id="test-result" class="result" aria-live="polite" hidden></div>
+<div id="test-result" class="result" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 <hr><div class="section-title"><div><h2>Kategorien</h2><p>Jeder Monat kann genau einer Kategorie zugeordnet werden.</p></div><button type="button" id="add-category" class="secondary">Kategorie hinzufügen</button></div>
 <div id="categories"></div><p id="free-months" class="hint"></p>
 <div id="category-editor" class="category-editor" hidden>
@@ -42,7 +42,7 @@
 <p class="hint">Ausgegraute Monate gehören bereits zu einer anderen Kategorie.</p>
 <button type="button" id="apply-category">Kategorie übernehmen</button>
 <button type="button" id="cancel-category" class="secondary">Verwerfen</button></div>
-<div class="save-bar"><p>Speichern ist erst nach erfolgreicher Kommunikationsprüfung möglich. Der Test gilt zehn Minuten.</p><button id="save-device" type="submit" disabled>Speichern und aktivieren</button></div>
+<div class="save-bar"><p id="save-reason" aria-live="polite">Bitte zuerst die Kommunikation erfolgreich prüfen. Der Test gilt zehn Minuten.</p><button id="save-device" type="submit" disabled>Speichern und aktivieren</button></div>
 </form></section>
 <footer>V0.1.0 · Ereignisgesteuerte Modbus-Steuerung · Einstellungen bleiben bei App-Neustarts erhalten.</footer></main>
 </body></html>

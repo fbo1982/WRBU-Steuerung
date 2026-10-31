@@ -291,7 +291,7 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/status")
         status = await response.json()
         self.assertEqual(len(status["devices"]), 1)
-        self.assertEqual(status["version"], "0.1.1")
+        self.assertEqual(status["version"], "0.1.2")
 
     async def test_mutation_without_custom_header_is_forbidden(self):
         response = await self.client.post("/api/probe", json={"connection": CONNECTION})
@@ -432,7 +432,7 @@ class AppPackagingTests(unittest.TestCase):
         config = yaml.safe_load((root / "wrbu_steuerung/config.yaml").read_text())
         self.assertEqual(repository["name"], "WRBU Steuerung")
         self.assertEqual(config["version"], VERSION)
-        self.assertEqual(VERSION, "0.1.1")
+        self.assertEqual(VERSION, "0.1.2")
         self.assertTrue(config["ingress"])
         self.assertTrue(config["homeassistant_api"])
         self.assertNotIn("ports", config)

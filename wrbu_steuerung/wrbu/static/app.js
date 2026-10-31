@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const months = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 let state = null, draft = null, editingCategory = null, proof = null, checking = false;
 let proofTimer = null;
+let editorEpoch = 0, proofReason = "Bitte zuerst die Kommunikation erfolgreich prüfen.";
 const form = $("device-form");
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -12,25 +13,69 @@ function element(tag, text, className) {
 }
 function notice(message="") { $("notice").textContent=message; $("notice").hidden=!message; }
 async function api(path, options={}) {
-  const response = await fetch(path, {...options, headers:{"Content-Type":"application/json","X-WRBU-Request":"1", ...(options.headers||{})}});
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Anfrage fehlgeschlagen.");
-  return data;
+  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),15000);
+  try {
+    const response=await fetch(path,{...options,signal:controller.signal,headers:{"Content-Type":"application/json","X-WRBU-Request":"1",...(options.headers||{})}});
+    let data;
+    try {data=await response.json();}
+    catch {throw new Error("Die App hat keine lesbare Antwort geliefert (HTTP "+response.status+"). Bitte das App-Protokoll prüfen.");}
+    if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen (HTTP "+response.status+").");
+    return data;
+  } catch(error) {
+    if(error.name==="AbortError")throw new Error("Keine Antwort von der App innerhalb von 15 Sekunden. Eine gestartete Prüfung kann im Hintergrund noch laufen; es wird nicht automatisch erneut geschrieben.");
+    throw error;
+  } finally {clearTimeout(timer);}
 }
 function connection() {
   return Object.fromEntries(["name","profile","host","port","unit"].map(key => [
     key, ["port","unit"].includes(key) ? Number(form.elements[key].value) : form.elements[key].value
   ]));
 }
-function invalidateProof() {
-  proof=null; clearTimeout(proofTimer); $("save-device").disabled=true;
-  $("test-result").hidden=true;
+function invalidateProof(reason) {
+  proof=null; clearTimeout(proofTimer);
+  proofReason=typeof reason==="string"?reason:"Verbindungsdaten geändert. Bitte erneut prüfen.";
+  if(!checking)$("test-result").hidden=true;
+  buttons();
 }
 function buttons() {
-  $("save-device").disabled = !proof || checking || !draft?.categories.length || !$("category-editor").hidden;
+  let reason;
+  if(checking)reason="Die Kommunikationsprüfung läuft. Bitte das Ergebnis abwarten.";
+  else if(!proof)reason=proofReason;
+  else if(!draft?.categories.length)reason="Bitte mindestens eine Kategorie anlegen.";
+  else if(!$("category-editor").hidden)reason="Bitte die Kategorie zuerst übernehmen oder verwerfen.";
+  else reason="Kommunikation erfolgreich geprüft. Einstellungen können gespeichert werden.";
+  $("save-reason").textContent=reason;
+  $("save-device").disabled=!proof||checking||!draft?.categories.length||!$("category-editor").hidden;
+}
+function validConnection() {
+  return ["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity());
+}
+const probeStages={queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Denselben SOC einmal schreiben",readback:"SOC zurücklesen und vergleichen",complete:"Abgeschlossen"};
+function showProbe(text, failed=false) {
+  $("test-result").className="result"+(failed?" failed":"");
+  $("test-result").hidden=false;
+  $("test-result").textContent=text;
+}
+function probeTarget(connection) {
+  return "Ziel: "+connection.host+":"+connection.port+" · Geräte-ID "+connection.unit;
+}
+function showProbeProgress(job, target) {
+  showProbe("Prüfung läuft · "+Math.floor(job.elapsed||0)+" s\n"+probeTarget(target)+"\nSchritt: "+(probeStages[job.stage]||job.stage)+"\n"+job.message);
+}
+function showProbeReport(job, target) {
+  const r=job.result||{}, success=job.state==="complete"&&r.success&&job.proof;
+  const error=r.error||job.message||"Keine erfolgreiche Prüfbestätigung erhalten.";
+  showProbe((success?"Prüfung erfolgreich":"Prüfung fehlgeschlagen")+"\n"+probeTarget(target)+
+    "\nSchritt: "+(probeStages[job.stage]||job.stage||"unbekannt")+
+    (success?"":"\nGrund: "+error)+
+    "\nModell: "+(r.model||"–")+" · Seriennummer: "+(r.serial||"–")+
+    "\nBackup-SOC gelesen: "+(r.before??"–")+" %"+
+    "\nSchreiben versucht: "+(r.write_attempted?"ja":"nein")+" · Schreibbestätigung: "+(r.write_acknowledged?"ja":"nein")+
+    "\nZurückgelesen: "+(r.after??"–")+" %"+
+    (success?"\nDu kannst den Wechselrichter jetzt speichern.":"\nSpeichern bleibt gesperrt. Bitte den angezeigten Grund prüfen."),!success);
 }
 function openEditor(device=null) {
-  notice(); invalidateProof();
+  editorEpoch++; notice(); invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen."); $("test-result").hidden=true;
   draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1},categories:structuredClone(state.default_categories)};
   $("editor-title").textContent=device?"Wechselrichter bearbeiten":"Wechselrichter anlegen";
   form.elements.profile.replaceChildren(...Object.entries(state.profiles).map(([value,label])=>{
@@ -103,25 +148,46 @@ $("apply-category").onclick=()=>{
 $("cancel-category").onclick=()=>{$("category-editor").hidden=true;buttons();};
 $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
-$("close-editor").onclick=()=>{$("editor").hidden=true;draft=null;invalidateProof();notice();};
+$("close-editor").onclick=()=>{editorEpoch++;$("editor").hidden=true;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();};
 for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
 $("test-device").onclick=async()=>{
-  if(!["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity()))return;
-  checking=true;invalidateProof();$("test-device").disabled=true;$("test-device").textContent="Kommunikation wird geprüft …";notice();
-  const submitted=JSON.stringify(connection()), id=draft.id;
+  if(!validConnection()||checking)return;
+  const epoch=editorEpoch, target=connection(), submitted=JSON.stringify(target), id=draft.id;
+  checking=true;invalidateProof("Prüfung läuft.");$("test-device").disabled=true;$("test-device").textContent="Prüfung läuft …";notice();
+  showProbe("Prüfung wird gestartet …\n"+probeTarget(target)+"\nEs wird kein Wert verändert: Der gelesene Backup-SOC wird einmal identisch zurückgeschrieben.");
+  $("test-result").scrollIntoView({behavior:"smooth",block:"nearest"});
   try {
-    const data=await api("api/probe",{method:"POST",body:JSON.stringify({id,connection:JSON.parse(submitted)})});
-    if(!draft||draft.id!==id||JSON.stringify(connection())!==submitted)throw new Error("Verbindungsdaten wurden geändert. Bitte erneut prüfen.");
-    const r=data.result;
-    $("test-result").className="result"+(r.success?"":" failed");$("test-result").hidden=false;
-    $("test-result").textContent=(r.success?"Prüfung erfolgreich":"Prüfung fehlgeschlagen")+"\nModell: "+(r.model||"–")+" · Seriennummer: "+(r.serial||"–")+"\nGelesen: "+(r.before??"–")+" % · Schreiben versucht: "+(r.write_attempted?"ja":"nein")+" · Schreibbestätigung: "+(r.write_acknowledged?"ja":"nein")+"\nZurückgelesen: "+(r.after??"–")+" %"+(r.error?"\n"+r.error:"");
-    proof=data.proof;
-    if(proof)proofTimer=setTimeout(()=>{proof=null;buttons();notice("Die Kommunikationsprüfung ist abgelaufen. Bitte erneut prüfen.");},600000);
-  } catch(error){notice(error.message);}
-  finally{checking=false;$("test-device").disabled=false;$("test-device").textContent="Kommunikation prüfen";buttons();}
+    let job=await api("api/probes",{method:"POST",body:JSON.stringify({id,connection:target})});
+    const started=Date.now();
+    while(job.state==="queued"||job.state==="running"){
+      if(epoch!==editorEpoch||!draft)return;
+      showProbeProgress(job,target);
+      if(Date.now()-started>90000)throw new Error("Die Prüfung läuft länger als erwartet. Sie kann im Hintergrund noch laufen; ein erneuter Klick verbindet sich mit dem laufenden Auftrag.");
+      await new Promise(resolve=>setTimeout(resolve,700));
+      job=await api("api/probes/"+encodeURIComponent(job.id));
+    }
+    if(epoch!==editorEpoch||!draft)return;
+    if(draft.id!==id||JSON.stringify(connection())!==submitted)throw new Error("Verbindungsdaten während der Prüfung geändert. Dieses Ergebnis erlaubt kein Speichern; bitte die neuen Daten prüfen.");
+    showProbeReport(job,target);
+    if(job.state==="complete"&&job.result?.success&&job.proof){
+      proof=job.proof;proofReason="Prüfung erfolgreich.";
+      proofTimer=setTimeout(()=>{proof=null;proofReason="Prüfung abgelaufen. Bitte erneut prüfen.";buttons();$("test-result").textContent+="\nDie Prüfbestätigung ist inzwischen abgelaufen.";},600000);
+    } else {
+      proof=null;proofReason="Prüfung fehlgeschlagen. Den Grund findest du direkt unter „Kommunikation prüfen“.";
+    }
+    $("test-result").scrollIntoView({behavior:"smooth",block:"nearest"});
+  } catch(error){
+    if(epoch===editorEpoch&&draft){
+      proof=null;proofReason="Keine erfolgreiche Prüfbestätigung. Bitte die Meldung unter „Kommunikation prüfen“ beachten.";
+      showProbe("Prüfung nicht erfolgreich abgeschlossen\n"+probeTarget(target)+"\n"+error.message+"\nSpeichern bleibt gesperrt.",true);
+      $("test-result").scrollIntoView({behavior:"smooth",block:"nearest"});
+    }
+  } finally {
+    checking=false;$("test-device").disabled=false;$("test-device").textContent="Kommunikation prüfen";buttons();
+  }
 };
 form.onsubmit=async event=>{
-  event.preventDefault();if(!proof||checking||!$("category-editor").hidden||!form.reportValidity())return;
+  event.preventDefault();if(!proof||checking||!$("category-editor").hidden||!validConnection())return;
   $("save-device").disabled=true;notice();
   try{await api("api/devices",{method:"POST",body:JSON.stringify({id:draft.id,connection:connection(),categories:draft.categories,proof})});$("editor").hidden=true;draft=null;invalidateProof();await refresh();}
   catch(error){notice(error.message);buttons();}

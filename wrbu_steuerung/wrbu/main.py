@@ -52,6 +52,13 @@ def create_app(manager, bridge, *, ingress_only=True):
     async def probe(request):
         return web.json_response(await manager.probe(await request.json()))
 
+    async def start_probe(request):
+        return web.json_response(await manager.start_probe(await request.json()), status=202)
+
+    async def probe_status(request):
+        return web.json_response(manager.probe_status(request.match_info["identity"]),
+                                 headers={"Cache-Control": "no-store"})
+
     async def save(request):
         return web.json_response(await manager.save(await request.json()))
 
@@ -76,6 +83,8 @@ def create_app(manager, bridge, *, ingress_only=True):
     app.router.add_post("/api/weather/search", weather_search)
     app.router.add_post("/api/weather/location", weather_save)
     app.router.add_post("/api/probe", probe)
+    app.router.add_post("/api/probes", start_probe)
+    app.router.add_get("/api/probes/{identity}", probe_status)
     app.router.add_post("/api/devices", save)
     app.router.add_delete("/api/devices/{identity}", delete)
     app.router.add_static("/static/", STATIC, show_index=False)
