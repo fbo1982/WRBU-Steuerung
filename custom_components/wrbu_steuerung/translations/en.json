@@ -1,0 +1,24 @@
+{
+  "title": "WRBU Steuerung",
+  "config": {
+    "step": {
+      "user": {"title": "Add and test inverter", "description": "Enter the inverter/WiNet IP, TCP port and Modbus unit ID. Continuing identifies the device, reads its backup SOC, writes the same value once and reads it back. Results are displayed before saving. For systems with an iHomeManager use the inverter endpoint; the native iHomeManager backup SOC path is unsupported.", "data": {"name": "Name", "profile": "Device profile", "host": "IP address", "port": "TCP port", "unit": "Modbus unit ID", "warning_entity": "Current DWD warning level"}},
+      "test_result": {"title": "Communication test result", "description": "{report}\n\nContinue to categories on success, or return to connection settings on failure. A failed test prevents saving. Nothing has been saved yet."},
+      "categories": {"title": "Manage categories", "description": "{overview}\n\nMonths belong exclusively to one category. Unassigned months remain unmanaged, including during weather warnings. Free months by editing or deleting an existing category to add a new one.", "menu_options": {"add": "Add category", "edit": "Edit category", "remove": "Delete category", "finish": "Save and activate"}},
+      "category": {"title": "Edit category", "description": "Only free months and months belonging to this category are selectable. Warning reserve applies at current DWD levels 2–4. {details}", "data": {"name": "Category name", "months": "Months", "normal_soc": "Normal backup SOC (%)", "warning_soc": "DWD warning backup SOC (%)"}},
+      "edit": {"title": "Select category to edit", "data": {"category": "Category"}},
+      "remove": {"title": "Select category to delete", "description": "Its months become available. Changes are committed only when saved.", "data": {"category": "Category"}}
+    },
+    "error": {"invalid_ip": "Enter a valid IP address.", "invalid_warning": "Select the official DWD Current warning level sensor.", "invalid_category": "Check the category name, months and SOC values."},
+    "abort": {"already_configured": "This inverter is already configured.", "already_in_progress": "This inverter is already being configured."}
+  },
+  "options": {
+    "step": {
+      "categories": {"title": "Manage categories", "description": "{overview}\n\nEach month can belong to one category only. Unassigned months remain unmanaged. Saving activates the new rules immediately.", "menu_options": {"add": "Add category", "edit": "Edit category", "remove": "Delete category", "finish": "Save and activate"}},
+      "category": {"title": "Edit category", "description": "Only available months or this category's own months are selectable. {details}", "data": {"name": "Category name", "months": "Months", "normal_soc": "Normal backup SOC (%)", "warning_soc": "DWD warning backup SOC (%)"}},
+      "edit": {"title": "Select category to edit", "data": {"category": "Category"}},
+      "remove": {"title": "Select category to delete", "description": "Its months become available. Changes are applied only when saved.", "data": {"category": "Category"}}
+    },
+    "error": {"invalid_category": "Check the category name, months and SOC values."}
+  }
+}

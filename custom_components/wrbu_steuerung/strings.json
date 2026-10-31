@@ -1,0 +1,43 @@
+{
+  "title": "WRBU Steuerung",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wechselrichter anlegen und testen",
+        "description": "IP des Wechselrichters/WiNet, TCP-Port und Modbus-Geräte-ID eingeben. Beim Fortfahren wird der WR identifiziert, der Backup-SOC gelesen, derselbe Wert einmal geschrieben und physisch zurückgelesen. Die Testausgabe folgt vor dem Speichern. Bei einer Anlage mit iHomeManager erfolgt der Backup-SOC-Zugriff direkt auf den WR; die iHM-IP ist dafür nicht unterstützt.",
+        "data": {"name": "Name", "profile": "Geräteprofil", "host": "IP-Adresse", "port": "TCP-Port", "unit": "Modbus-Geräte-ID", "warning_entity": "Aktuelle DWD-Warnstufe"}
+      },
+      "test_result": {
+        "title": "Ergebnis der Kommunikationsprüfung",
+        "description": "{report}\n\nBei Erfolg geht es zur Kategorienverwaltung. Bei einem Fehler geht es zurück zu den Verbindungsdaten; ein weiterer Test erfolgt erst beim erneuten Absenden. Es wurde noch kein Gerät gespeichert."
+      },
+      "categories": {
+        "title": "Kategorien verwalten",
+        "description": "{overview}\n\nMonate sind exklusiv einer Kategorie zugeordnet. Um eine weitere Kategorie anzulegen, bei Bedarf zuerst Monate aus einer bestehenden Kategorie entfernen. Für nicht zugeordnete Monate bleibt die bestehende Reserve unverändert, auch bei DWD-Warnungen.",
+        "menu_options": {"add": "Kategorie hinzufügen", "edit": "Kategorie bearbeiten", "remove": "Kategorie löschen", "finish": "Speichern und aktivieren"}
+      },
+      "category": {
+        "title": "Kategorie bearbeiten",
+        "description": "Nur noch freie Monate und die Monate dieser Kategorie sind auswählbar. Warnreserve gilt bei aktueller DWD-Stufe 2, 3 oder 4. {details}",
+        "data": {"name": "Kategoriename", "months": "Monate", "normal_soc": "Normaler Backup-SOC (%)", "warning_soc": "Backup-SOC bei DWD-Warnung (%)"}
+      },
+      "edit": {"title": "Welche Kategorie bearbeiten?", "data": {"category": "Kategorie"}},
+      "remove": {"title": "Welche Kategorie löschen?", "description": "Die Monate dieser Kategorie werden wieder frei. Änderungen werden erst mit Speichern übernommen.", "data": {"category": "Kategorie"}}
+    },
+    "error": {"invalid_ip": "Bitte eine gültige IP-Adresse eingeben.", "invalid_warning": "Bitte den offiziellen DWD-Sensor Current warning level auswählen.", "invalid_category": "Kategorie ungültig. Namen, Monatszuordnung und SOC-Werte prüfen."},
+    "abort": {"already_configured": "Dieser Wechselrichter ist bereits angelegt.", "already_in_progress": "Dieser Wechselrichter wird bereits eingerichtet."}
+  },
+  "options": {
+    "step": {
+      "categories": {
+        "title": "Kategorien verwalten",
+        "description": "{overview}\n\nBereits belegte Monate können nicht doppelt vergeben werden. Nicht zugeordnete Monate bleiben ungesteuert. Speichern aktiviert die neuen Regeln sofort.",
+        "menu_options": {"add": "Kategorie hinzufügen", "edit": "Kategorie bearbeiten", "remove": "Kategorie löschen", "finish": "Speichern und aktivieren"}
+      },
+      "category": {"title": "Kategorie bearbeiten", "description": "Nur freie Monate oder Monate dieser Kategorie sind auswählbar. {details}", "data": {"name": "Kategoriename", "months": "Monate", "normal_soc": "Normaler Backup-SOC (%)", "warning_soc": "Backup-SOC bei DWD-Warnung (%)"}},
+      "edit": {"title": "Welche Kategorie bearbeiten?", "data": {"category": "Kategorie"}},
+      "remove": {"title": "Welche Kategorie löschen?", "description": "Monate werden wieder frei. Erst Speichern übernimmt die Änderungen.", "data": {"category": "Kategorie"}}
+    },
+    "error": {"invalid_category": "Kategorie ungültig. Namen, Monatszuordnung und SOC-Werte prüfen."}
+  }
+}
