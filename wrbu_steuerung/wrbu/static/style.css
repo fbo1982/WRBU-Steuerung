@@ -8,3 +8,6 @@ button{border:0;border-radius:8px;padding:11px 16px;background:#087f74;color:#ff
 @media(max-width:780px){header{padding:24px;align-items:flex-start;flex-direction:column}.fields{grid-template-columns:1fr 1fr}.months{grid-template-columns:repeat(3,1fr)}.section-title,.save-bar,.test-bar{align-items:flex-start;flex-direction:column}.category-row{align-items:flex-start;flex-direction:column}main{padding:16px}.panel{padding:18px}h1{font-size:26px}}
 @media(max-width:450px){.fields{grid-template-columns:1fr}.device-grid{grid-template-columns:1fr}.months{grid-template-columns:repeat(2,1fr)}}
 
+
+.weather-panel{margin:0 0 24px}.weather-panel label{max-width:720px}#weather-choice{margin-top:20px;display:flex;align-items:flex-end;gap:14px}#weather-choice label{flex:1}#weather-message{min-height:20px}#weather-headlines{padding-left:20px;font-size:14px}#weather-summary{line-height:1.6}@media(max-width:780px){#weather-choice{align-items:stretch;flex-direction:column}}
+

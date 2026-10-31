@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## V0.1.1
+
+- WR-Kommunikationsprüfung und Speichern sind unabhängig von Wetterstandort, DWD-Sensor und HA-Verbindung.
+- Eigenständiger Bereich „Wetter & Standort“ für alle Wechselrichter.
+- Vollständige Adresse lokal eingeben; nur Ortsname und Warngebietskennung werden direkt beim DWD abgefragt.
+- Keine externe Adress-Geokodierung; Gemeinde, Kreis und Bundesland werden vor dem Speichern angezeigt.
+- Direkte DWD-Abfrage alle fünf Minuten; Berücksichtigung der Gültigkeitszeiten und Schutz bei fehlenden/fehlerhaften Daten.
+- Bestehende Geräte/Kategorien bleiben erhalten; alte DWD-Sensorzuordnung am WR entfällt.
+
+
 ## V0.1.0
 
 Erste Version als Home-Assistant-App (Add-on), installierbar direkt über den

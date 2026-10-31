@@ -1,5 +1,5 @@
 name: "WRBU Steuerung"
-version: "0.1.0"
+version: "0.1.1"
 slug: "wrbu_steuerung"
 description: "Saisonale Backup-SOC-Steuerung mit Kategorien, DWD-Schutz und geprüftem Modbus-Zugriff"
 url: "https://github.com/fbo1982/WRBU-Steuerung"

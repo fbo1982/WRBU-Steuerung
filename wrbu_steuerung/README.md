@@ -1,7 +1,7 @@
-# WRBU Steuerung · V0.1.0
+# WRBU Steuerung · V0.1.1
 
-Nach der Installation die App starten und **Weboberfläche öffnen** wählen.
-Wechselrichter, Kommunikationsprüfung und Monatskategorien werden direkt dort verwaltet.
+WR-Kommunikation ohne DWD-Sensor prüfen und speichern.
+Wetterstandort getrennt unter **Wetter & Standort** mit der vollständigen Adresse einrichten.
 
 Die ausführliche Anleitung steht im Reiter **Dokumentation**.
 

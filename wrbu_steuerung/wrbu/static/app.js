@@ -18,7 +18,7 @@ async function api(path, options={}) {
   return data;
 }
 function connection() {
-  return Object.fromEntries(["name","profile","host","port","unit","warning_entity"].map(key => [
+  return Object.fromEntries(["name","profile","host","port","unit"].map(key => [
     key, ["port","unit"].includes(key) ? Number(form.elements[key].value) : form.elements[key].value
   ]));
 }
@@ -29,28 +29,13 @@ function invalidateProof() {
 function buttons() {
   $("save-device").disabled = !proof || checking || !draft?.categories.length || !$("category-editor").hidden;
 }
-function fillWarnings(selected) {
-  const select=form.elements.warning_entity;
-  select.replaceChildren(element("option", "DWD-Sensor auswählen"));
-  select.firstChild.value="";
-  for (const warning of state.warnings) {
-    const option=element("option", warning.name + (warning.region ? " · "+warning.region : ""));
-    option.value=warning.entity_id; select.append(option);
-  }
-  if (selected && !state.warnings.some(w=>w.entity_id===selected)) {
-    const option=element("option", selected+" (derzeit nicht verfügbar)");
-    option.value=selected; select.append(option);
-  }
-  select.value=selected||"";
-}
 function openEditor(device=null) {
   notice(); invalidateProof();
-  draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1,warning_entity:""},categories:structuredClone(state.default_categories)};
+  draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1},categories:structuredClone(state.default_categories)};
   $("editor-title").textContent=device?"Wechselrichter bearbeiten":"Wechselrichter anlegen";
   form.elements.profile.replaceChildren(...Object.entries(state.profiles).map(([value,label])=>{
     const option=element("option",label);option.value=value;return option;
   }));
-  fillWarnings(draft.connection.warning_entity);
   for (const [key,value] of Object.entries(draft.connection)) if(form.elements[key]) form.elements[key].value=value;
   $("editor").hidden=false; $("category-editor").hidden=true;
   renderCategories(); $("editor").scrollIntoView({behavior:"smooth",block:"start"});
@@ -119,9 +104,9 @@ $("cancel-category").onclick=()=>{$("category-editor").hidden=true;buttons();};
 $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
 $("close-editor").onclick=()=>{$("editor").hidden=true;draft=null;invalidateProof();notice();};
-for(const key of ["name","profile","host","port","unit","warning_entity"])form.elements[key].addEventListener("input",invalidateProof);
+for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
 $("test-device").onclick=async()=>{
-  if(!form.reportValidity())return;
+  if(!["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity()))return;
   checking=true;invalidateProof();$("test-device").disabled=true;$("test-device").textContent="Kommunikation wird geprüft …";notice();
   const submitted=JSON.stringify(connection()), id=draft.id;
   try {
@@ -141,15 +126,53 @@ form.onsubmit=async event=>{
   try{await api("api/devices",{method:"POST",body:JSON.stringify({id:draft.id,connection:connection(),categories:draft.categories,proof})});$("editor").hidden=true;draft=null;invalidateProof();await refresh();}
   catch(error){notice(error.message);buttons();}
 };
+function renderWeather(){
+  const weather=state.weather;
+  if(!weather)return;
+  const config=weather.config;
+  $("weather-summary").textContent=config
+    ?config.label+" · "+(weather.ready?"DWD-Stufe "+weather.level:"Warnlage unbekannt")+" · "+(weather.last_update?"Letzte Abfrage: "+new Date(weather.last_update).toLocaleString("de-DE"):"Warte auf erste DWD-Abfrage")
+    :"Noch kein Wetterstandort gespeichert. WR-Kommunikation kann unabhängig davon geprüft werden.";
+  if(document.activeElement!==$("weather-address")&&!$("weather-address").value&&config)$("weather-address").value=config.address;
+  if(weather.error)$("weather-summary").textContent+=" · "+weather.error;
+  $("weather-headlines").replaceChildren(...weather.headlines.map(text=>element("li",text)));
+}
+$("weather-address").addEventListener("input",()=>{$("weather-choice").hidden=true;$("weather-region").replaceChildren();});
+$("weather-form").onsubmit=async event=>{
+  event.preventDefault();
+  if(!$("weather-address").reportValidity())return;
+  const address=$("weather-address").value;
+  $("weather-search").disabled=true;$("weather-message").textContent="DWD-Warnregion wird gesucht …";$("weather-choice").hidden=true;
+  try{
+    const data=await api("api/weather/search",{method:"POST",body:JSON.stringify({address})});
+    if($("weather-address").value!==address)throw new Error("Adresse wurde geändert. Bitte erneut prüfen.");
+    $("weather-region").replaceChildren(...data.candidates.map(candidate=>{
+      const option=element("option",candidate.label);option.value=candidate.token;return option;
+    }));
+    $("weather-choice").hidden=false;
+    $("weather-message").textContent="Bitte die passende Gemeinde und das Bundesland kontrollieren und den Wetterstandort speichern.";
+  }catch(error){$("weather-message").textContent=error.message;}
+  finally{$("weather-search").disabled=false;}
+};
+$("weather-save").onclick=async()=>{
+  const token=$("weather-region").value;if(!token)return;
+  $("weather-save").disabled=true;
+  try{
+    await api("api/weather/location",{method:"POST",body:JSON.stringify({token})});
+    $("weather-choice").hidden=true;$("weather-message").textContent="Wetterstandort gespeichert. DWD-Daten werden direkt geladen.";
+    await refresh();
+  }catch(error){$("weather-message").textContent=error.message;}
+  finally{$("weather-save").disabled=false;}
+};
 async function refresh(){
   try{
     state=await api("api/status");
     $("version").textContent="V"+state.version;
     $("connection").className="banner"+(state.ha_ready?" ok":"");
-    $("connection").textContent=state.ha_ready?"Home Assistant verbunden · DWD-Ereignisse aktiv · Zeitzone "+state.timezone:state.ha_error||"Warte auf Home Assistant …";
-    $("add-device").disabled=!state.ha_ready;
+    $("connection").textContent=state.ha_ready?"Home Assistant verbunden · Zeitzone "+state.timezone:"Zeitzone "+state.timezone+" · WR-Prüfung und direkte DWD-Abfrage sind unabhängig von Home Assistant.";
+    $("add-device").disabled=false;
     renderDevices();
-    if(draft){const selected=form.elements.warning_entity.value;fillWarnings(selected);}
+    renderWeather();
   }catch(error){$("connection").className="banner";$("connection").textContent="App nicht erreichbar: "+error.message;}
 }
 async function poll(){await refresh();setTimeout(poll,5000);}

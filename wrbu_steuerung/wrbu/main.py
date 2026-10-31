@@ -11,6 +11,7 @@ from . import VERSION
 from .ha import HABridge
 from .manager import DEFAULT_CATEGORIES, Manager, PROFILES, Store
 from .modbus import ModbusError
+from .weather import WeatherService
 
 STATIC = Path(__file__).parent / "static"
 
@@ -44,7 +45,7 @@ def create_app(manager, bridge, *, ingress_only=True):
         return web.json_response({
             "version": VERSION, "ha_ready": bridge.ready, "ha_error": bridge.error,
             "timezone": str(bridge.zone), "server_time": datetime.now(bridge.zone).isoformat(),
-            "warnings": bridge.warnings(), "profiles": PROFILES,
+            "weather": manager.weather.snapshot() if manager.weather else None, "profiles": PROFILES,
             "devices": manager.snapshot(), "default_categories": DEFAULT_CATEGORIES,
         }, headers={"Cache-Control": "no-store"})
 
@@ -58,12 +59,22 @@ def create_app(manager, bridge, *, ingress_only=True):
         await manager.delete(request.match_info["identity"])
         return web.json_response({"success": True})
 
+    async def weather_search(request):
+        data = await request.json()
+        return web.json_response({"candidates": await manager.weather.search(data["address"])})
+
+    async def weather_save(request):
+        data = await request.json()
+        return web.json_response(await manager.weather.configure(data["token"]))
+
     async def health(request):
         return web.json_response({"status": "ok", "version": VERSION})
 
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
     app.router.add_get("/api/status", status)
+    app.router.add_post("/api/weather/search", weather_search)
+    app.router.add_post("/api/weather/location", weather_save)
     app.router.add_post("/api/probe", probe)
     app.router.add_post("/api/devices", save)
     app.router.add_delete("/api/devices/{identity}", delete)
@@ -78,10 +89,12 @@ def main():
     manager = Manager(store)
     bridge = HABridge(manager, os.environ.get("SUPERVISOR_TOKEN", ""))
     manager.bridge = bridge
+    manager.weather = WeatherService(Path("/data"), manager.trigger)
     app = create_app(manager, bridge)
 
     async def lifecycle(app):
-        tasks = [asyncio.create_task(bridge.run()), asyncio.create_task(bridge.calendar())]
+        tasks = [asyncio.create_task(bridge.run()), asyncio.create_task(bridge.calendar()),
+                 asyncio.create_task(manager.weather.run())]
         try:
             yield
         finally:

@@ -2,10 +2,21 @@
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css"><script src="static/app.js" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.0</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.1</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div><button id="add-device">Wechselrichter anlegen</button></header>
 <main><div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
 <div id="notice" role="status" hidden></div>
+<section class="panel weather-panel" aria-labelledby="weather-title">
+<div class="section-title"><div><span class="eyebrow">FÜR ALLE WECHSELRICHTER</span><h2 id="weather-title">Wetter &amp; Standort</h2></div></div>
+<p id="weather-summary" aria-live="polite">Noch kein Wetterstandort eingerichtet. Wechselrichter können trotzdem geprüft und gespeichert werden.</p>
+<form id="weather-form">
+<label>Vollständige Anlagenadresse<input id="weather-address" autocomplete="street-address" maxlength="250" placeholder="Straße Hausnummer, PLZ Ort" required></label>
+<p class="hint">Die vollständige Adresse bleibt lokal. Nur der erkannte Ortsname wird beim DWD zur Warngebietssuche angefragt. Straße und Hausnummer werden nicht übertragen. Bitte die gefundene Gemeinde und das Bundesland prüfen.</p>
+<button id="weather-search" type="submit">Adresse prüfen</button>
+<div id="weather-choice" hidden><label>Gefundene DWD-Warnregion<select id="weather-region"></select></label><button id="weather-save" type="button">Wetterstandort speichern</button></div>
+<div id="weather-message" class="hint" role="status"></div>
+</form><ul id="weather-headlines"></ul>
+</section>
 <section id="devices" class="device-grid" aria-label="Wechselrichter"></section>
 <section id="editor" class="panel" hidden>
 <div class="section-title"><div><span class="eyebrow">GERÄTEVERWALTUNG</span><h2 id="editor-title">Wechselrichter anlegen</h2></div><button id="close-editor" class="secondary">Abbrechen</button></div>
@@ -16,7 +27,7 @@
 <label>IP-Adresse<input name="host" required placeholder="192.168.1.100"></label>
 <label>TCP-Port<input name="port" type="number" min="1" max="65535" value="502" required></label>
 <label>Modbus-Geräte-ID<input name="unit" type="number" min="1" max="247" value="1" required></label>
-<label>Aktueller DWD-Sensor<select name="warning_entity" required></select></label>
+
 </div>
 <p class="hint">Für Anlagen mit iHomeManager die IP des Wechselrichters/WiNet verwenden. Der native Backup-SOC-Zugriff über den iHomeManager ist noch nicht unterstützt.</p>
 <div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Backup-SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>

@@ -41,10 +41,6 @@ def normalize_connection(data):
         if type(value) is not int or not 1 <= value <= maximum:
             raise ValueError(f"Ungültiger Wert für {key}.")
         connection[key] = value
-    warning = data.get("warning_entity")
-    if not isinstance(warning, str) or not warning.startswith("sensor."):
-        raise ValueError("Bitte den aktuellen offiziellen DWD-Sensor auswählen.")
-    connection["warning_entity"] = warning
     return connection
 
 
@@ -66,7 +62,8 @@ class Store:
             if device["serial"] in serials:
                 raise ValueError("Doppelte Seriennummer im Datenspeicher.")
             serials.add(device["serial"])
-            normalize_connection(device["connection"])
+            # V0.1.0 stored the DWD sensor on the inverter. Weather is now global.
+            device["connection"] = normalize_connection(device["connection"])
             if not validate_categories(device["categories"]):
                 raise ValueError("Ein gespeichertes Gerät hat keine Kategorien.")
         return devices
@@ -92,6 +89,7 @@ class Manager:
         self.factory = adapter_factory
         self.retry_seconds = retry_seconds
         self.bridge = None
+        self.weather = None
         self.runtime = {}
         self._desired = {}
         self._pending = set()
@@ -116,8 +114,6 @@ class Manager:
         editing = data.get("id")
         if editing is not None and editing not in self.devices:
             raise ValueError("Dieses Gerät existiert nicht mehr.")
-        if not self.bridge or not self.bridge.is_warning(connection["warning_entity"]):
-            raise ValueError("DWD-Sensor fehlt oder Home Assistant ist noch nicht verbunden.")
         async with self._lock:
             self._proofs = {k: v for k, v in self._proofs.items() if v["expires"] > time.monotonic()}
             adapter = self.factory(connection)
@@ -219,13 +215,13 @@ class Manager:
         if self._stopped or identity not in self.devices:
             return
         device = self.devices[identity]
-        level = self.bridge.level(device["connection"]["warning_entity"]) if self.bridge else None
+        level = self.weather.level() if self.weather else None
         desired, category = target_for(device["categories"], self.now().month, level)
         state = self.runtime.setdefault(identity, {})
         state.update(category=category, warning_level=level, desired=desired)
         if desired is None:
             self._cancel_retry(identity)
-            state.update(status="pausiert", error="DWD nicht verfügbar oder Monat ohne Kategorie.")
+            state.update(status="pausiert", error="Wetterstandort/DWD-Daten fehlen oder Monat ohne Kategorie. Kommunikationsprüfung bleibt möglich.")
             return
         if desired != self._desired.get(identity):
             self._desired[identity] = desired

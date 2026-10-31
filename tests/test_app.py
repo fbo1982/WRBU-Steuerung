@@ -30,8 +30,11 @@ class FakeBridge:
     def is_warning(self, entity):
         return self.ready and entity == CONNECTION["warning_entity"]
 
-    def level(self, entity):
+    def level(self, entity=None):
         return self.value if self.ready else None
+
+    def snapshot(self):
+        return {"config": None, "level": self.level(), "ready": self.ready, "error": "", "headlines": [], "last_update": None}
 
     def warnings(self):
         return [{"entity_id": CONNECTION["warning_entity"], "name": "Stockstadt", "region": "Stockstadt", "level": self.value}]
@@ -82,6 +85,7 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         self.manager = Manager(self.store, adapter_factory=lambda *args: self.adapter)
         self.bridge = FakeBridge()
         self.manager.bridge = self.bridge
+        self.manager.weather = self.bridge
         self.manager.now = lambda: datetime(2026, 10, 31, 22, tzinfo=self.bridge.zone)
         self.client = TestClient(TestServer(create_app(self.manager, self.bridge, ingress_only=False)))
         await self.client.start_server()
@@ -287,7 +291,7 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/status")
         status = await response.json()
         self.assertEqual(len(status["devices"]), 1)
-        self.assertEqual(status["version"], "0.1.0")
+        self.assertEqual(status["version"], "0.1.1")
 
     async def test_mutation_without_custom_header_is_forbidden(self):
         response = await self.client.post("/api/probe", json={"connection": CONNECTION})
@@ -328,9 +332,9 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("gespeichert", (await response.json())["error"])
         self.assertFalse(self.store.path.exists())
 
-    async def test_real_ha_websocket_auth_bootstrap_and_warning_event(self):
-        device = await self.device()
-        send_warning = asyncio.Event()
+    async def test_real_ha_websocket_only_loads_timezone(self):
+        await self.device()
+        update = asyncio.Event()
         token_received = asyncio.Event()
 
         async def handler(request):
@@ -341,29 +345,24 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(auth, {"type": "auth", "access_token": "test-token"})
             token_received.set()
             await ws.send_json({"type": "auth_ok"})
-            for _ in range(6):
+            for _ in range(2):
                 command = await ws.receive_json()
-                result = None
-                if command["type"] == "get_states":
-                    result = [{"entity_id": CONNECTION["warning_entity"], "state": "0", "attributes": {}}]
-                elif command["type"] == "get_config":
-                    result = {"time_zone": "Europe/Berlin"}
-                elif command["type"] == "config/entity_registry/list":
-                    result = [{"entity_id": CONNECTION["warning_entity"], "platform": "dwd_weather_warnings",
-                               "unique_id": "stockstadt-current_warning_level"}]
+                self.assertIn(command["type"], ("subscribe_events", "get_config"))
+                result = {"time_zone": "Europe/Berlin"} if command["type"] == "get_config" else None
                 await ws.send_json({"type": "result", "id": command["id"], "success": True, "result": result})
-            await send_warning.wait()
-            await ws.send_json({"type": "event", "id": 1, "event": {"event_type": "state_changed", "data": {
-                "entity_id": CONNECTION["warning_entity"],
-                "new_state": {"state": "3", "attributes": {}},
-            }}})
+            await update.wait()
+            await ws.send_json({"type": "event", "id": 1, "event": {"event_type": "core_config_updated", "data": {}}})
+            command = await ws.receive_json()
+            self.assertEqual(command["type"], "get_config")
+            await ws.send_json({"type": "result", "id": command["id"], "success": True,
+                                "result": {"time_zone": "Europe/London"}})
             async for _message in ws:
                 pass
             return ws
 
-        server_app = web.Application()
-        server_app.router.add_get("/ws", handler)
-        server = TestServer(server_app)
+        app = web.Application()
+        app.router.add_get("/ws", handler)
+        server = TestServer(app)
         await server.start_server()
         url = str(server.make_url("/ws")).replace("http://", "ws://", 1)
         bridge = HABridge(self.manager, "test-token", url)
@@ -375,17 +374,35 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                 while not bridge.ready:
                     await asyncio.sleep(0.01)
             await self.drain()
-            self.assertEqual(self.adapter.applies, [])
-            send_warning.set()
+            update.set()
             async with asyncio.timeout(2):
-                while self.adapter.current != 60:
+                while str(bridge.zone) != "Europe/London":
                     await asyncio.sleep(0.01)
-            self.assertEqual(self.adapter.writes, [60])
-            self.assertEqual(self.manager.runtime[device["id"]]["warning_level"], "3")
+            self.assertEqual(self.adapter.writes, [])
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
             await server.close()
+
+    async def test_probe_and_save_without_weather_or_home_assistant(self):
+        self.manager.bridge = None
+        self.manager.weather = None
+        connection = {k: v for k, v in CONNECTION.items() if k != "warning_entity"}
+        result = await self.manager.probe({"connection": connection})
+        self.assertTrue(result["result"]["success"])
+        device = await self.manager.save({"connection": connection, "proof": result["proof"], "categories": CATEGORIES})
+        await self.drain()
+        self.assertEqual(self.adapter.writes, [35])  # only the explicit communication test
+        self.assertEqual(self.manager.runtime[device["id"]]["status"], "pausiert")
+        self.assertNotIn("warning_entity", device["connection"])
+
+    async def test_legacy_device_sensor_is_ignored_on_load(self):
+        device = await self.device()
+        persisted = self.store.load()
+        persisted[device["id"]]["connection"]["warning_entity"] = "sensor.old_dwd"
+        self.store.write(persisted)
+        reloaded = self.store.load()
+        self.assertNotIn("warning_entity", reloaded[device["id"]]["connection"])
 
 
 class CalendarAndBridgeTests(unittest.TestCase):
@@ -399,21 +416,13 @@ class CalendarAndBridgeTests(unittest.TestCase):
         ]:
             self.assertEqual(next_month_check(current), expected)
 
-    def test_only_current_official_dwd_registry_entries(self):
+    def test_ha_bridge_has_no_weather_sensor_dependency(self):
         bridge = HABridge(None, "not-a-real-token")
         bridge.connected = True
-        bridge.accept_result("config", {"time_zone": "Europe/Berlin"})
-        bridge.accept_result("states", [{"entity_id": "sensor.good", "state": "3"}])
-        bridge.accept_result("registry", [
-            {"entity_id": "sensor.good", "platform": "dwd_weather_warnings", "unique_id": "x-current_warning_level"},
-            {"entity_id": "sensor.advance", "platform": "dwd_weather_warnings", "unique_id": "x-advance_warning_level"},
-            {"entity_id": "sensor.fake", "platform": "template", "unique_id": "x-current_warning_level"},
-        ])
+        self.assertFalse(bridge.ready)
+        bridge.accept_config({"time_zone": "Europe/Berlin"})
         self.assertTrue(bridge.ready)
-        self.assertEqual(bridge.level("sensor.good"), "3")
-        self.assertIsNone(bridge.level("sensor.advance"))
-        bridge.connected = False
-        self.assertIsNone(bridge.level("sensor.good"))
+        self.assertEqual(str(bridge.zone), "Europe/Berlin")
 
 
 class AppPackagingTests(unittest.TestCase):
@@ -423,7 +432,7 @@ class AppPackagingTests(unittest.TestCase):
         config = yaml.safe_load((root / "wrbu_steuerung/config.yaml").read_text())
         self.assertEqual(repository["name"], "WRBU Steuerung")
         self.assertEqual(config["version"], VERSION)
-        self.assertEqual(VERSION, "0.1.0")
+        self.assertEqual(VERSION, "0.1.1")
         self.assertTrue(config["ingress"])
         self.assertTrue(config["homeassistant_api"])
         self.assertNotIn("ports", config)
