@@ -1,1 +1,3 @@
-voluptuous>=0.15,<1
+-r wrbu_steuerung/requirements.txt
+PyYAML>=6,<7
+

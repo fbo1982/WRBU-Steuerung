@@ -1,198 +1,182 @@
-# WRBU Steuerung
+# WRBU Steuerung · V0.1.0
 
-Home-Assistant-Custom-Integration für eine ereignisgesteuerte Backup-SOC-Reserve.
-Frei benennbare Kategorien ersetzen feste Saisonregeln. Jedes angelegte Gerät
-bekommt seine eigenen Kategorien und seinen DWD-Sensor.
+**Home-Assistant-App (Add-on)** für saisonale Backup-SOC-Regeln und DWD-Schutz.
+Die Installation erfolgt direkt über **Einstellungen → Apps → App installieren**.
+Wie bei EVCC to PDF und Car2MQTT ist keine HACS-Installation erforderlich.
+
+[Repository in Home Assistant hinzufügen](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ffbo1982%2FWRBU-Steuerung)
 
 ## Einrichtung
 
-**WRBU Steuerung ist eine Integration.** Das Repository gehört nicht in den
-Home-Assistant-App-/Add-on-Store. Dessen Meldung „is not a valid app repository“
-ist bei diesem Repository zu erwarten. Die Installation erfolgt über HACS oder
-durch Kopieren des Integrationsordners.
+1. In Home Assistant **Einstellungen → Apps → App installieren** öffnen.
+2. Rechts oben **⋮ → Repositories** öffnen.
+3. `https://github.com/fbo1982/WRBU-Steuerung` hinzufügen.
+4. Unter **WRBU Steuerung** die gleichnamige App auswählen und installieren.
+   Die App wird bei der Installation aus dem Quellcode gebaut.
+5. App starten; bei Bedarf **Automatisch starten** und **In der Seitenleiste anzeigen**
+   aktivieren. **Weboberfläche öffnen** wählen.
+6. Die offizielle DWD-Integration für deine Region muss in Home Assistant
+   eingerichtet sein. Für Stockstadt am Rhein die Region des ausgewählten
+   Sensors kontrollieren.
+7. In der App **Wechselrichter anlegen**, Profil, IP, TCP-Port, Geräte-ID und
+   aktuellen DWD-Sensor auswählen. Standard für SH: Port 502, Geräte-ID 1.
+8. **Kommunikation prüfen**: Es wird identifiziert, der Backup-SOC gelesen,
+   derselbe Wert einmal geschrieben und wieder gelesen. Die App zeigt die
+   einzelnen Ergebnisse an. Nur ein erfolgreicher Test erlaubt das Speichern.
+9. Kategorien anpassen und **Speichern und aktivieren** wählen.
 
-### Installation über HACS
+Falls die App nach dem Hinzufügen noch nicht erscheint, den App-Store über
+dessen Menü auf Aktualisierungen prüfen und neu öffnen. Die ursprüngliche
+Meldung „not a valid app repository“ wird durch die jetzt vorhandene
+`repository.yaml` und die vollständige App-Struktur behoben.
 
-Voraussetzung: [HACS ist bereits eingerichtet](https://www.hacs.xyz/docs/use/).
+Unterstützte Architekturen: **amd64 und aarch64**. Benötigt Home Assistant mit
+Supervisor und App-Store. Kein öffentlicher Web-Port: Zugriff erfolgt über
+Home Assistant Ingress. Das Supervisor-Token wird automatisch bereitgestellt;
+ein persönliches Token muss nicht eingegeben werden.
 
-1. **HACS** in Home Assistant öffnen.
-2. Oben rechts **⋮ → Benutzerdefinierte Repositories / Custom repositories** öffnen.
-3. Repository `https://github.com/fbo1982/WRBU-Steuerung` eintragen.
-4. Als Typ **Integration** auswählen und hinzufügen.
-5. In HACS nach **WRBU Steuerung** suchen und herunterladen.
-6. Home Assistant vollständig neu starten.
+## Bedienung und Kategorien
 
-Das Repository wird als benutzerdefiniertes Repository verwendet; eine Aufnahme
-in die HACS-Standardliste ist nicht erforderlich. Ohne GitHub-Release verwendet
-HACS den Standardbranch `main`.
+Jeder Wechselrichter hat eigene Kategorien, Namen, Monate, einen normalen
+Backup-SOC und einen Backup-SOC bei aktuellen DWD-Warnstufen 2, 3 oder 4.
+Stufe 0 oder 1 verwendet wieder den normalen Wert.
 
-### Alternative: manuelle Installation ohne HACS
+Ein Monat kann nur einer Kategorie dieses Geräts gehören. Belegte Monate
+sind in anderen Kategorien ausgegraut; beim Bearbeiten bleiben die eigenen
+Monate auswählbar. Eine zusätzliche serverseitige Prüfung verhindert doppelte
+Zuordnungen. Warnreserve darf die normale Reserve nicht unterschreiten.
 
-Den Ordner `custom_components/wrbu_steuerung` aus dem Repository nach
-`/config/custom_components/wrbu_steuerung` kopieren und Home Assistant neu starten.
+Die bisherigen drei Saisonregeln sind vorbelegt und frei bearbeitbar:
+Winter 40 %, März/November 30 %, sonst 25 %, jeweils 60 % bei Warnung.
+Um eine zusätzliche Kategorie anzulegen, bei Bedarf erst Monate aus einer
+bestehenden Kategorie freigeben. Nicht zugeordnete Monate bleiben
+**ungesteuert, auch bei DWD-Warnungen**; die Oberfläche weist darauf hin.
+Mindestens eine Kategorie ist erforderlich.
 
-### Integration einrichten
+Kategorien im Editor werden zunächst nur als Entwurf geändert. Abbrechen
+verwirft den Entwurf. Speichern aktiviert die neue Konfiguration sofort.
+Auch beim Bearbeiten wird die Kommunikation vor dem Speichern geprüft.
+Der erfolgreiche Test gilt zehn Minuten, ist an die Verbindungsdaten gebunden
+und kann nur einmal zum Speichern verwendet werden. Ein Speichern nach
+geänderten Verbindungsdaten erfordert einen neuen Test.
 
-1. Die offizielle DWD-Integration für deine Region einrichten. Für Stockstadt am
-   Rhein die Attribute `region_name`/`region_id` des Sensors prüfen.
-2. **Einstellungen → Geräte & Dienste → Integration hinzufügen → WRBU Steuerung**.
-3. Gerätenamen, Geräteprofil, IP, TCP-Port, Modbus-Geräte-ID und offiziellen
-   DWD-Sensor **Current warning level** auswählen. Standard-Port 502, ID 1.
-4. Beim Fortfahren läuft der Test. Die nächste Seite zeigt Modell, Seriennummer,
-   gelesenen Backup-SOC, Schreibversuch, Schreibbestätigung und Rücklesewert.
-   Bei einem Fehler ist Speichern gesperrt. Zurück zu den Verbindungsdaten,
-   korrigieren und erneut absenden. Kein automatischer Test-Schreib-Retry.
-5. Kategorien anpassen, anschließend **Speichern und aktivieren** wählen.
+Geräte und Einrichtungstests liegen dauerhaft in `/data/devices.json` und
+bleiben bei Neustart und App-Update erhalten. Beschädigte Konfigurationen
+werden nicht stillschweigend überschrieben. App-Deinstallation kann diese
+Daten entfernen; die App-Daten daher mit Home Assistant sichern.
 
-Die drei bisherigen Saisonkategorien sind als bearbeitbare Ausgangswerte
-vorbelegt. Die spätere Verwaltung erfolgt über **Konfigurieren** am
-Integrationseintrag. Verbindungsdaten ändern: Eintrag entfernen und neu anlegen;
-dadurch ist erneut ein erfolgreicher Kommunikationstest erforderlich.
+## Geräteprofile
 
-Die Integration läuft in Home Assistant, nicht als externer GitHub-App-Dienst.
-Repositoryname: `WRBU-Steuerung`; Anzeigename: **WRBU Steuerung**.
-Für einen Wechselrichter ist nur ein Eintrag erlaubt, anhand der Seriennummer
-auch über verschiedene IP-Adressen/Profile hinweg. Weitere WR werden als weitere
-Integrationseinträge angelegt. Parallele Fremdprogramme werden nicht gesperrt.
+- **Sungrow SH – direkter Zugriff:** unterstützt die hinterlegte SH-RS-/SH-RT-/
+  SH-T-Modellliste nach erfolgreicher Geräteidentifikation.
+- **Sungrow SH mit iHomeManager – direkt auf WR zugreifen:** gleicher Zugriff,
+  weiterhin IP des Wechselrichters/WiNet statt der iHomeManager-IP eingeben.
+- **Über iHomeManager selbst:** explizit gesperrt. Dafür fehlt eine belegte,
+  hier implementierte Backup-SOC-Zuordnung. Aktuelle Firmware allein ist kein
+  Kompatibilitätsnachweis.
 
-## Kategorien
+Das SH-Profil nutzt Dokumentationsregister 13100, Modbus-Adresse 13099,
+U16, Prozent, FC03/FC06. Unbekannte Modelle und geänderte Seriennummern werden
+vor Schreibzugriffen abgewiesen. TLS und serielles Modbus RTU sind nicht enthalten.
+Die App verändert keine anderen Wechselrichterregister.
 
-Jede Kategorie enthält:
+## Steuerung und Kommunikationsschonung
 
-- eigenen Namen, z. B. „XYZ“;
-- einen oder mehrere Monate;
-- normalen Backup-SOC in ganzen Prozent;
-- Backup-SOC für aktive DWD-Warnstufe 2, 3 oder 4.
+Die App verarbeitet DWD-Zustandsänderungen über die Home-Assistant-WebSocket-API.
+Die erste Auswertung erfolgt beim App-Start, sobald gültige HA-/DWD-Daten
+vorliegen. Am 1. jedes Monats um 00:05 Uhr wird in der HA-Zeitzone neu ausgewertet.
+Neue gespeicherte Einstellungen werden sofort ausgewertet.
 
-Belegte Monate werden beim Hinzufügen anderer Kategorien nicht mehr angeboten.
-Beim Bearbeiten bleiben die Monate der bearbeiteten Kategorie auswählbar.
-Zusätzlich verhindert die Prüfung beim Speichern Überschneidungen. Namen müssen
-eindeutig sein; Warnreserve darf nicht unter der normalen Reserve liegen.
+Kein periodisches Modbus-Schreiben oder Modbus-Polling. Gleiche Sollwerte
+erzeugen nach erfolgreicher Ausführung keine weiteren Modbus-Anfragen.
+Bei einem neuen Sollwert wird zuerst physisch gelesen; ist dieser bereits
+erreicht, entfällt das Schreiben. Die sichtbaren WR-Werte stammen von der
+letzten verifizierten Kommunikation und werden mit Zeitangabe angezeigt.
 
-Sind alle Monate vergeben, zuerst eine Kategorie bearbeiten oder löschen,
-um Monate freizugeben. Löschen gibt die Monate sofort im Entwurf frei.
-Erst **Speichern und aktivieren** übernimmt den Entwurf; Abbrechen verwirft ihn.
-Es muss mindestens eine Kategorie bestehen. Nicht zugeordnete Monate bleiben
-**ungesteuert**, auch bei DWD-Warnungen. Diese Monate zeigt die Übersicht an.
+Bei Verbindungsfehler oder fehlgeschlagener Rückleseprüfung wartet genau ein
+Wiederholungsauftrag 30 Sekunden ab Fehlerfeststellung. Der Versuch prüft
+erneut die aktuelle Lage und liest vor einem eventuellen Schreiben erneut.
+Ein anderer Sollwert ersetzt den alten Auftrag. Ein Lock verhindert parallele
+Schreibvorgänge; Warnungsänderungen während eines laufenden Schreibens gehen
+nicht verloren. Bei anhaltendem Fehler folgen weitere gezielte 30-Sekunden-
+Versuche. Der Einrichtungstest selbst wiederholt niemals automatisch das
+Schreiben.
 
-Bei Stufe 0/1 wird der normale Wert verwendet. Bei mehreren gleichzeitigen
-Warnungen zählt die höchste aktuelle Stufe. Vorabwarnungen werden abgelehnt.
-Alle Warnarten ab Stufe 2 zählen. `unknown`/`unavailable` ist keine Entwarnung:
-Bei fehlenden Daten bleibt der WR-Wert erhalten, auch beim Systemstart.
+Unbekannte DWD-Werte, fehlende Sensoren oder verlorene HA-Verbindung sind
+keine Entwarnung. Die vorhandene Reserve bleibt erhalten. Bei Wiederherstellung
+der HA-Verbindung werden die gültigen Zustände neu übernommen.
+Die offizielle DWD-Integration fragt normalerweise alle 15 Minuten ab:
+Die App reagiert sofort auf HA-Änderungen, nicht unmittelbar auf DWD-Publikationen.
 
-## Geräteprofile und iHomeManager
+Die Oberfläche aktualisiert nur die Anzeige alle fünf Sekunden aus dem
+App-Speicher. Das löst keine Modbus-Anfragen aus. Erneute HA-Anmeldeversuche
+nach Verbindungsabbrüchen erfolgen unabhängig davon.
 
-| Auswahl | Stand |
-| --- | --- |
-| Sungrow SH – direkter WR-Zugriff | SH-RS, SH-RT und SH-T aus der hinterlegten Modellliste; Modell/Seriennummer werden gelesen |
-| Sungrow SH mit iHomeManager – Zugriff direkt auf WR | Gleiches SH-Profil, weiterhin WR-/WiNet-IP verwenden; nicht iHM-IP |
-| Über iHomeManager selbst | Gesperrt, zeigt einen verständlichen Fehler; kein geratenes Backup-SOC-Register |
+Der gleiche Wert im Einrichtungstest prüft den Modbus-Schreibablauf und die
+Rückmeldung, keine reale Notstromumschaltung. Bei einem Timeout nach einem
+tatsächlich ausgeführten Schreibvorgang ist keine physische Exactly-once-
+Garantie möglich. Ladeverhalten und tatsächlich verfügbare Reserve hängen vom
+WR, seiner Konfiguration und dem tatsächlichen Batterieladezustand ab.
 
-Das SH-Profil verwendet Dokumentationsregister **13100**, Modbus-Adresse
-**13099**, U16, 1 %, Lesen FC03, Schreiben FC06. Die Modellliste stammt aus
-Sungrows SH-Protokoll V1.1.11. Unbekannte Geräte werden vor jedem Schreiben
-abgewiesen. Der native iHomeManager wird durch dieses SH-Protokoll ausdrücklich
-nicht abgedeckt. Seine eigenen Modbus-Ports und Register sind separat zu
-betrachten. Ein aktueller Firmwarestand allein belegt keine Kompatibilität.
+## Vorherige Custom-Integration
 
-Für native iHM-Unterstützung fehlt hier eine belegte Backup-SOC-Zuordnung.
-Die Auswahl ist daher ausdrücklich noch keine Funktionszusage. Das Vorhandensein
-eines iHomeManagers in der Anlage verhindert nicht grundsätzlich einen separaten
-WR-Zugriff; dessen tatsächliche Erreichbarkeit muss der Test bestätigen.
+Dieses Repository wurde auf den ausdrücklich gewünschten App-Store-Weg umgestellt.
+Die frühere HACS-/Custom-Integration ist keine Voraussetzung. Falls sie schon
+installiert wurde, vor Aktivierung der App entfernen oder deaktivieren.
+Andere Automationen und Programme dürfen nicht gleichzeitig gegensätzliche
+Backup-SOC-Vorgaben machen.
 
-Keine TLS-Verbindung und kein Modbus-RTU/seriell in dieser Version. Ein TLS-Port
-kann nicht mit diesem reinen TCP-Client verwendet werden. Keine Netzwerksuche
-oder Schreibversuche auf anderen Registern.
+Die App schreibt direkt über Modbus. Eine bereits vorhandene
+`number.battery_reserved_soc_for_backup` aus deiner bisherigen Modbus-Anbindung
+kann den Gerätewert weiterhin anzeigen. Die App selbst registriert keine neue
+Home-Assistant-number-Entität; die Verwaltung erfolgt in ihrer Weboberfläche.
 
-## Kommunikationstest und Betrieb
+## Projektstruktur und Erweiterungen
 
-Der Einrichtungstest identifiziert den WR und führt danach **genau einen**
-Schreibversuch mit dem unmittelbar zuvor gelesenen Backup-SOC durch. Dieser
-bewusste Schreibzugriff ist auch bei unverändertem Wert erforderlich. Danach
-wird derselbe Registerwert erneut vom Gerät gelesen. Erst bei Bestätigung und
-Übereinstimmung wird der erfolgreiche Teststatus zum Speichern zugelassen.
-Geräte antworten mitunter mit identischem Wert, obwohl eine interne Funktion
-gesperrt ist: Dieser Test bestätigt den Modbus-Ablauf, keine reale Notstromprobe.
+```text
+repository.yaml
+VERSION
+CHANGELOG.md
+wrbu_steuerung/
+  config.yaml
+  Dockerfile
+  requirements.txt
+  DOCS.md
+  wrbu/
+    main.py          Ingress-Webserver und API
+    manager.py       Speicherung, Prüfung, Steuerung und Retry
+    ha.py            HA-Ereignisse und Monatskalender
+    profiles.py      Erweiterbare Wechselrichteradapter
+    policy.py        Kategorien und SOC-Regeln
+    modbus.py        Modbus-TCP
+    static/          Deutsche Verwaltungsoberfläche
+tests/
+.github/workflows/tests.yml
+```
 
-Im Betrieb werden Regeln nach HA-Start/Laden, am 1. jedes Monats um 00:05 Uhr
-HA-Ortszeit und bei DWD-Änderungen ausgewertet. Änderungen gespeicherter
-Kategorien laden den Eintrag neu und aktivieren die neuen Regeln sofort.
-Zeitzone für Deutschland: `Europe/Berlin`.
+Weitere WR werden als weitere Geräte angelegt. Für andere Hersteller wird ein
+neuer Adapter mit `identify`, `probe` und `apply` in `profiles.py` ergänzt und
+in `manager.py` registriert. Kategorien und UI bleiben davon unabhängig.
+Keine frei geratenen Registeradressen im Benutzerformular.
 
-Nur ein neuer SOC-Sollwert löst eine Geräteprüfung aus. Ist der reale Wert
-bereits korrekt, wird nicht geschrieben. Wiederholte DWD-Meldungen und gleiche
-Sollwerte führen auch zu keinen weiteren Modbus-Leseaufrufen. Anders als in der
-vorigen Version kann ein Monatswechsel während einer Warnung einen neuen
-Warn-SOC erfordern, weil jede Kategorie ihren eigenen Warnwert hat.
-
-Ein fehlgeschlagener Betriebsauftrag wird nach 30 Sekunden erneut geprüft,
-gerechnet ab Fehlerfeststellung. Es gibt genau einen Timer und keine
-gleichzeitigen Schreibaufträge. Ein anderer Sollwert ersetzt den alten Auftrag;
-fehlende DWD-Daten oder ein Monat ohne Regel brechen den Retry ab. Vor jedem
-erneuten Schreiben wird physisch gelesen, um Doppelzugriffe nach einem
-mehrdeutigen Timeout möglichst zu vermeiden. Eine physische Exactly-once-
-Garantie ist bei Verbindungsabbrüchen nicht möglich. Anhaltende Fehler erzeugen
-weitere 30-Sekunden-Retries ausschließlich für den ausstehenden Auftrag.
-
-Der Modbus-Client wartet je Anfrage maximal fünf Sekunden und begrenzt
-Antwortgrößen; zwischen Anfragen innerhalb einer Sitzung mindestens 1,05 Sekunden.
-Kein periodisches Geräte-Polling. Ein vorhandenes Gerät, das an derselben IP
-ersetzt wurde, wird anhand der geänderten Seriennummer vor dem Schreiben erkannt.
-
-## Entitäten und Ergebnisanzeige
-
-- **Battery reserved SOC for backup**: `number`, normalerweise
-  `number.battery_reserved_soc_for_backup`; HA kann bei Namenskonflikten einen
-  anderen Namen vergeben. Wert entspricht der letzten verifizierten Abfrage,
-  nicht einer kontinuierlichen Messung. Attribut `last_verified` zeigt den Stand.
-- **Kommunikationsstatus**: Diagnose-Sensor mit aktiver Kategorie, gewünschtem
-  SOC, letztem Fehler, letzter Verifikation und gespeichertem Einrichtungstest
-  im Attribut `setup_test`.
-
-Die number kann manuell über `number.set_value` gesetzt werden. Dieser explizite
-Aufruf nutzt denselben seriellen und verifizierten Schreibpfad. Er wird nicht
-sofort durch die automatische Regel zurückgesetzt, sondern erst beim nächsten
-Sollwertwechsel oder Neustart. Die Integration steuert keine weiteren Register.
-
-Vor dem Umstieg die alte `sungrow_backup_soc`-Integration entfernen und andere
-Automationen abstimmen, die denselben SOC schreiben. Kein automatischer Import
-alter Einträge. Einstellungen des iHomeManagers oder der Hersteller-App können
-ebenfalls auf die Reserve einwirken; diese Integration regelt dann nicht ständig
-dagegen an. DWD fragt laut HA-Dokumentation im 15-Minuten-Takt ab; die Reaktion
-erfolgt unmittelbar nach Änderung des HA-Sensors. Die Wirkung des Reservewerts
-auf Laden/Entladen ist geräte- und konfigurationsabhängig.
-
-## Erweiterung um weitere Wechselrichter
-
-`profiles.py` trennt die Gerätekommunikation von Kategorien und Steuerung.
-Ein neuer Adapter implementiert `BackupAdapter`: `identify`, `probe` und `apply`.
-Die Factory `create_adapter` und Auswahl `PROFILE_NAMES` erweitern. `probe` muss
-denselben Wert einmal schreiben und physisch verifizieren; `apply` muss bei
-bereits erreichtem Wert ohne Schreiben zurückkehren. Hersteller-/Modellangaben
-und Entitäts-Metadaten für neue Hersteller ergänzen. Keine frei eingebbaren
-Registeradressen in der Benutzeroberfläche.
-
-## Entwicklung und Prüfungen
+## Prüfungen
 
 ```shell
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
-python -m compileall -q custom_components
+python -m compileall -q wrbu_steuerung/wrbu
 ```
 
-Die Tests prüfen Regeln, UI-Ablauf, Auswahl freier Monate, Speichersperre,
-Geräteidentität, Test-Schreibanzahl, Rücklesefehler, Retries und Nebenläufigkeit.
-Die Modbus-Tests nutzen echte TCP-Pakete gegen einen lokalen Testserver.
-HA-Schnittstellen werden in diesen Unit-Tests durch Testdoubles ersetzt;
-es handelt sich nicht um einen vollständigen Test mit laufendem Home Assistant.
-Ein realer SH-/iHM-Hardwaretest wurde nicht durchgeführt. Kein HACS-Prüfsiegel.
-
-Der beiliegende GitHub-Workflow führt Tests und Syntaxprüfung aus.
+Unit- und HTTP-Tests prüfen echte App-Handler, Speicherprüfung, Retry,
+Nebenläufigkeit und Kommunikation gegen lokale Modbus-Testserver.
+Der GitHub-Workflow baut außerdem den Container für amd64 und aarch64.
+Ein Test auf deinem Home-Assistant-Supervisor und mit deinem realen WR steht
+noch aus. Softwaretests ersetzen diesen Hardwaretest nicht.
 
 ## Quellen
 
-- [Sungrow SH-Protokoll V1.1.11, Herstellerdokument auf externem Host](https://forum.iobroker.net/assets/uploads/files/1771841809177-ti_20251119_communication-protocol-of-residential-hybrid-inverter_v1.1.11_en.pdf)
-- [Sungrow iHomeManager-Handbuch](https://info-support.sungrowpower.com/application/pdf/2025/07/05/iHomeManager-UEN-202504.pdf)
-- [Offizielle Home-Assistant-DWD-Integration](https://www.home-assistant.io/integrations/dwd_weather_warnings/)
+- [Home-Assistant-App-Repositories](https://developers.home-assistant.io/docs/apps/repository/)
+- [Home-Assistant-App-Kommunikation](https://developers.home-assistant.io/docs/apps/communication/)
+- [Offizielle DWD-Integration](https://www.home-assistant.io/integrations/dwd_weather_warnings/)
+- [Sungrow-SH-Protokoll V1.1.11, Herstellerdokument auf externem Host](https://forum.iobroker.net/assets/uploads/files/1771841809177-ti_20251119_communication-protocol-of-residential-hybrid-inverter_v1.1.11_en.pdf)
 
-Die Herstellerdokumente werden verlinkt und nicht im Repository mitgeliefert.

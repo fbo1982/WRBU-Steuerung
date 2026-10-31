@@ -1,0 +1,19 @@
+name: "WRBU Steuerung"
+version: "0.1.0"
+slug: "wrbu_steuerung"
+description: "Saisonale Backup-SOC-Steuerung mit Kategorien, DWD-Schutz und geprüftem Modbus-Zugriff"
+url: "https://github.com/fbo1982/WRBU-Steuerung"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_title: "WRBU Steuerung"
+panel_icon: "mdi:battery-lock"
+homeassistant_api: true
+options: {}
+schema: {}
+

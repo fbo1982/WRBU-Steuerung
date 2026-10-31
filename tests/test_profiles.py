@@ -87,3 +87,4 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
             profiles.create_adapter({**CONNECTION, "profile": "sungrow_ihm_native"})
         self.assertIsInstance(profiles.create_adapter(
             {**CONNECTION, "profile": "sungrow_sh_with_ihm"}), profiles.SungrowSH)
+

@@ -81,3 +81,4 @@ class ModbusSession:
         response = await self.request(6, address, value)
         if response != struct.pack(">BHH", 6, address, value):
             raise ModbusError("Schreibbestätigung stimmt nicht mit Anfrage überein")
+

@@ -46,3 +46,4 @@ def target_for(categories: list[dict], month: int, level: str | None):
         return None, None
     key = "warning_soc" if int(level) >= 2 else "normal_soc"
     return category[key], category["name"]
+

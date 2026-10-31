@@ -125,3 +125,4 @@ def create_adapter(connection: dict, expected_serial: str | None = None) -> Back
             "Bitte SH-Profil mit direkter IP des Wechselrichters/WiNet wählen, nicht die iHM-IP."
         )
     raise ModbusError("Unbekanntes Geräteprofil")
+

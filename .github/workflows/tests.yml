@@ -1,9 +1,9 @@
-name: Tests
+name: App checks
 on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  test:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,4 +12,17 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m unittest discover -s tests -v
-      - run: python -m compileall -q custom_components
+      - run: python -m compileall -q wrbu_steuerung/wrbu
+      - run: node --check wrbu_steuerung/wrbu/static/app.js
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./wrbu_steuerung
+          platforms: linux/amd64,linux/arm64
+          push: false
+

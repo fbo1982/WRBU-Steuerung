@@ -128,3 +128,4 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(modbus.ModbusError):
                 await session.write(13099, 60)
         self.assertEqual(len(self.requests), 1)
+

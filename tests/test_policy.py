@@ -40,3 +40,4 @@ class PolicyTests(unittest.TestCase):
         data[1]["name"] = " WINTER "
         with self.assertRaises(ValueError):
             policy.validate_categories(data)
+
