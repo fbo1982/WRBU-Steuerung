@@ -16,6 +16,9 @@ jobs:
       - run: node --check wrbu_steuerung/wrbu/static/app.js
   container:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -23,6 +26,17 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ./wrbu_steuerung
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: false
+          load: true
+          tags: wrbu-smoke:0.1.0
+      - name: Start app and check health
+        run: |
+          docker run --detach --name wrbu-smoke --platform linux/${{ matrix.arch }} -p 127.0.0.1:18099:8099 wrbu-smoke:0.1.0
+          python tests/container_smoke.py
+      - name: Container log and cleanup
+        if: always()
+        run: |
+          docker logs wrbu-smoke
+          docker rm --force wrbu-smoke
 
