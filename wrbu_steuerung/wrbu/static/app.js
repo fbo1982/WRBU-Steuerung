@@ -6,6 +6,7 @@ let proofTimer = null;
 let saving = false, lockedControls = [], proofSignature = null;
 let editorEpoch = 0, proofReason = "Bitte zuerst die Kommunikation erfolgreich prüfen.";
 let currentView = "home", draftBaseline = "", pickerSignature = "";
+let categoryEventRules = [];
 const form = $("device-form");
 function draftSignature() {
   return draft?JSON.stringify({connection:connection(),categories:draft.categories,interval:$("check-interval").value}):"";
@@ -198,6 +199,7 @@ function renderDevices() {
     card.append(dl);
     if(runtime.last_verified) card.append(element("p","Zuletzt vom WR bestätigt: "+new Date(runtime.last_verified).toLocaleString("de-DE"),"muted"));
     if(runtime.error) card.append(element("p",runtime.error,"error"));
+    if(runtime.reason&&device.categories.some(c=>c.name===runtime.category&&c.event_rules?.length))card.append(element("p","Gültige Regel: "+runtime.reason,"muted"));
     if(runtime.next_check)card.append(element("p","Nächster Abgleich: "+new Date(runtime.next_check).toLocaleString("de-DE"),"muted"));
     const actions=element("div",undefined,"actions");
     const edit=element("button","Settings","secondary small");edit.onclick=()=>openEditor(device);
@@ -222,10 +224,10 @@ function renderSettingsDevices(){
   }
 }
 function renderCategories() {
-  const list=$("categories");list.replaceChildren();
+  const list=$("categories");list.hidden=false;$("free-months").hidden=false;list.replaceChildren();
   draft.categories.forEach((category,index)=>{
     const row=element("div",undefined,"category-row"), details=element("div");
-    details.append(element("strong",category.name),element("p",category.months.map(m=>months[m-1]).join(", ")+" · Normal "+category.normal_soc+" % · DWD "+category.warning_soc+" %"));
+    details.append(element("strong",category.name),element("p",category.months.map(m=>months[m-1]).join(", ")+" · Normal "+category.normal_soc+" % · DWD-Standard "+category.warning_soc+" % · "+(category.event_rules?.length||0)+" Ereignisregeln"));
     const actions=element("div",undefined,"actions");
     const edit=element("button","Bearbeiten","secondary small");edit.type="button";edit.onclick=()=>openCategory(index);
     const remove=element("button","Löschen","danger small");remove.type="button";remove.onclick=()=>{
@@ -240,24 +242,70 @@ function renderCategories() {
 }
 function openCategory(index=null) {
   if(saving)return;
+  $("save-result").hidden=true;
+  $("categories").hidden=true;$("free-months").hidden=true;$("add-category").disabled=true;
   editingCategory=index;
   const category=index===null?{name:"",months:[],normal_soc:25,warning_soc:60}:draft.categories[index];
   $("category-name").value=category.name;$("normal-soc").value=category.normal_soc;$("warning-soc").value=category.warning_soc;
+  categoryEventRules=structuredClone(category.event_rules||[]);renderEventRules();
   const used=new Set(draft.categories.flatMap((c,i)=>i===index?[]:c.months));
   const list=$("months");list.replaceChildren();
   months.forEach((name,i)=>{const label=element("label"),input=element("input");input.type="checkbox";input.value=String(i+1);input.checked=category.months.includes(i+1);input.disabled=used.has(i+1);label.append(input,document.createTextNode(name));list.append(label);});
   $("category-editor").hidden=false;buttons();
 }
+function renderEventRules(){
+  const list=$("event-rules");list.replaceChildren();
+  const catalog=state.event_catalog||[];
+  if(!categoryEventRules.length)list.append(element("p","Keine eigenen Ereignisregeln. Der DWD-Standard bleibt aktiv.","hint"));
+  categoryEventRules.forEach((rule,index)=>{
+    const row=element("div",undefined,"event-rule");
+    const eventLabel=element("label","Ereignis / Wettergruppe"),select=element("select");
+    for(const [kind,title] of [["group","Wettergruppen"],["event","Einzelne DWD-Ereignisse"]]){
+      const group=element("optgroup");group.label=title;
+      for(const item of catalog.filter(item=>item.kind===kind)){
+        const option=element("option",item.label);option.value=item.id;group.append(option);
+      }
+      select.append(group);
+    }
+    select.value=rule.event;select.onchange=()=>{rule.event=select.value;};eventLabel.append(select);
+    const levelLabel=element("label","Ab DWD-Stufe"),level=element("select");
+    for(let value=1;value<=4;value++){const option=element("option","Stufe "+value);option.value=String(value);level.append(option);}
+    level.value=String(rule.min_level);level.onchange=()=>{rule.min_level=Number(level.value);};levelLabel.append(level);
+    const socLabel=element("label","Backup-SOC (%)"),soc=element("input");
+    soc.type="number";soc.min="0";soc.max="100";soc.step="1";soc.value=String(rule.soc);
+    soc.oninput=()=>{rule.soc=soc.value===""?null:Number(soc.value);};socLabel.append(soc);
+    const remove=element("button","Entfernen","danger small");remove.type="button";
+    remove.onclick=()=>{categoryEventRules.splice(index,1);renderEventRules();};
+    row.append(eventLabel,levelLabel,socLabel,remove);list.append(row);
+  });
+  $("add-event-rule").disabled=categoryEventRules.length>=32||!catalog.length;
+}
+$("add-event-rule").onclick=()=>{
+  if(saving||categoryEventRules.length>=32)return;
+  const choices=[...(state.event_catalog||[])].sort((a,b)=>(b.id==="group:WIND")-(a.id==="group:WIND"));
+  const item=choices.find(item=>!categoryEventRules.some(rule=>rule.event===item.id&&rule.min_level===2));
+  if(!item)return;
+  categoryEventRules.push({event:item.id,min_level:2,soc:Math.max(Number($("normal-soc").value),60)});
+  renderEventRules();
+};
 $("apply-category").onclick=()=>{
   const category={name:$("category-name").value.trim(),months:[...$("months").querySelectorAll("input:checked")].map(input=>Number(input.value)),
     normal_soc:Number($("normal-soc").value),warning_soc:Number($("warning-soc").value)};
   if(!category.name||!category.months.length) {notice("Bitte Kategorienamen und mindestens einen Monat auswählen.");return;}
   if(!Number.isInteger(category.normal_soc)||!Number.isInteger(category.warning_soc)||category.normal_soc<0||category.warning_soc>100||category.warning_soc<category.normal_soc) {notice("Bitte ganze SOC-Werte von 0 bis 100 eingeben. Die Warnreserve darf nicht niedriger sein.");return;}
   if(draft.categories.some((c,i)=>i!==editingCategory&&c.name.toLocaleLowerCase()===category.name.toLocaleLowerCase())) {notice("Dieser Kategoriename ist bereits vergeben.");return;}
+  const usedRules=new Set();
+  for(const rule of categoryEventRules){
+    const key=rule.event+":"+rule.min_level;
+    if(!(state.event_catalog||[]).some(item=>item.id===rule.event)||!Number.isInteger(rule.min_level)||rule.min_level<1||rule.min_level>4||!Number.isInteger(rule.soc)||rule.soc<category.normal_soc||rule.soc>100){notice("Ereignisregeln: gültiges Ereignis, Stufe 1–4 und ganzen SOC zwischen normaler Monatsreserve und 100 % eingeben.");return;}
+    if(usedRules.has(key)){notice("Dieses Ereignis mit dieser Mindestwarnstufe ist bereits vorhanden.");return;}
+    usedRules.add(key);
+  }
+  category.event_rules=structuredClone(categoryEventRules);
   if(editingCategory===null)draft.categories.push(category);else draft.categories[editingCategory]=category;
   $("category-editor").hidden=true;notice();renderCategories();categoryDraftChanged();
 };
-$("cancel-category").onclick=()=>{$("category-editor").hidden=true;buttons();};
+$("cancel-category").onclick=()=>{$("category-editor").hidden=true;renderCategories();};
 $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
 $("close-editor").onclick=()=>{if(saving||checking||!mayLeaveDraft())return;editorEpoch++;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();syncView();};
@@ -330,6 +378,7 @@ form.onsubmit=async event=>{
     proof=null;proofSignature=null;clearTimeout(proofTimer);
     proofReason="Gespeicherte WR-Verbindung kann für weitere Kategorieänderungen verwendet werden.";
     const details="\nKategorie: "+(result.category||"–")+" · DWD-Stufe: "+(result.warning_level??"unbekannt")+
+      (result.reason?"\nGültige Regel: "+result.reason:"")+
       "\nAktuell gültiger Sollwert: "+(result.desired??"–")+" % · Bestätigter Backup-SOC: "+(result.current??"–")+" %"+
       (result.checked_at?"\nStand des Speicherabgleichs: "+new Date(result.checked_at).toLocaleString("de-DE"):"");
     showSave(result.message+details,false,!result.applied);
@@ -351,7 +400,8 @@ function renderWeather(){
     :"Noch kein Wetterstandort gespeichert. WR-Kommunikation kann unabhängig davon geprüft werden.";
   if(document.activeElement!==$("weather-address")&&!$("weather-address").value&&config)$("weather-address").value=config.address;
   if(weather.error)$("weather-summary").textContent+=" · "+weather.error;
-  $("weather-headlines").replaceChildren(...weather.headlines.map(text=>element("li",text)));
+  $("weather-headlines").replaceChildren(...(weather.warnings||weather.headlines).map(w=>element("li",typeof w==="string"?w:
+    w.event+" · Stufe "+w.level+" · gültig bis "+new Date(w.end).toLocaleString("de-DE"))));
 }
 $("weather-address").addEventListener("input",()=>{$("weather-choice").hidden=true;$("weather-region").replaceChildren();});
 $("weather-form").onsubmit=async event=>{

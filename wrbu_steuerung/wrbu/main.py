@@ -8,6 +8,7 @@ from pathlib import Path
 from aiohttp import web
 
 from . import VERSION
+from .events import CATALOG
 from .ha import HABridge
 from .manager import DEFAULT_CATEGORIES, Manager, PROFILES, Store
 from .modbus import ModbusError
@@ -47,6 +48,7 @@ def create_app(manager, bridge, *, ingress_only=True):
             "timezone": str(bridge.zone), "server_time": datetime.now(bridge.zone).isoformat(),
             "weather": manager.weather.snapshot() if manager.weather else None, "profiles": PROFILES,
             "devices": manager.snapshot(), "default_categories": DEFAULT_CATEGORIES,
+            "event_catalog": CATALOG,
         }, headers={"Cache-Control": "no-store"})
 
     async def probe(request):

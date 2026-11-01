@@ -10,7 +10,7 @@ from pathlib import Path
 import secrets
 import time
 
-from .policy import validate_categories, target_for
+from .policy import validate_categories, decision_for
 from .profiles import TestResult, create_adapter
 from .modbus import ModbusError
 
@@ -70,7 +70,8 @@ class Store:
             # V0.1.0 stored the DWD sensor on the inverter. Weather is now global.
             device["connection"] = normalize_connection(device["connection"])
             device["check_interval_minutes"] = validate_interval(device.get("check_interval_minutes", 0))
-            if not validate_categories(device["categories"]):
+            device["categories"] = validate_categories(device["categories"])
+            if not device["categories"]:
                 raise ValueError("Ein gespeichertes Gerät hat keine Kategorien.")
         return devices
 
@@ -275,6 +276,7 @@ class Manager:
                 "saved": True, "applied": applied, "outcome": outcome, "message": message,
                 "category": state.get("category"), "desired": state.get("desired"),
                 "current": state.get("current"), "warning_level": state.get("warning_level"),
+                "reason": state.get("reason"),
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }}
             progress("complete", message)
@@ -418,13 +420,15 @@ class Manager:
         if self._stopped or identity not in self.devices:
             return
         device = self.devices[identity]
-        level = self.weather.level() if self.weather else None
-        desired, category = target_for(device["categories"], self.now().month, level)
+        observation = self.weather.snapshot() if self.weather else {}
+        level = observation.get("level")
+        decision = decision_for(device["categories"], self.now().month, level, observation.get("warnings"))
+        desired, category = decision["desired"], decision["category"]
         state = self.runtime.setdefault(identity, {})
-        state.update(category=category, warning_level=level, desired=desired)
+        state.update(category=category, warning_level=level, desired=desired, reason=decision["reason"])
         if desired is None:
             self._cancel_retry(identity)
-            state.update(status="pausiert", error="Wetterstandort/DWD-Daten fehlen oder Monat ohne Kategorie. Kommunikationsprüfung bleibt möglich.")
+            state.update(status="pausiert", error=decision["reason"]+" Kommunikationsprüfung bleibt möglich.")
             return
         if force or desired != self._desired.get(identity):
             self._desired[identity] = desired

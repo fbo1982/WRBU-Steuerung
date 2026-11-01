@@ -105,6 +105,9 @@ legend { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
 #settings-devices .category-row p { overflow-wrap: anywhere; }
 footer { padding: 12px 0 0; color: #72858c; text-align: center; font-size: 11px; }
 [hidden] { display: none !important; }
+.event-settings { margin-top: 16px; border-top: 1px solid #dce6e8; padding-top: 12px; }
+.event-settings h3 { font-size: 15px; margin: 0; }
+.event-rule { display: grid; grid-template-columns: minmax(0, 2fr) minmax(100px, .6fr) minmax(110px, .6fr) auto; gap: 10px; align-items: end; margin-bottom: 10px; }
 @media (min-width: 1000px) {
   .card dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   #page-home > .section-title > div, .overview .section-title > div {
@@ -125,6 +128,8 @@ footer { padding: 12px 0 0; color: #72858c; text-align: center; font-size: 11px;
   .category-row { align-items: flex-start; flex-direction: column; }
   main { padding: 12px; }
   .panel, .card { padding: 14px; }
+  .event-rule { grid-template-columns: 1fr 1fr; }
+  .event-rule > label:first-child { grid-column: 1 / -1; }
   #weather-choice { align-items: stretch; flex-direction: column; }
   button, button.small { min-height: 40px; }
 }

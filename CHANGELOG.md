@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## V0.1.7
+
+- Eigene DWD-Ereignisregeln je Wechselrichter und Monatskategorie mit Ereignis/Gruppe, Mindestwarnstufe und Backup-SOC.
+- Auswahl offizieller EC_II-Ereignisse und EC_GROUP-Wettergruppen einschließlich kombinierter Warnungen.
+- Passende Regeln ersetzen pro Warnung den DWD-Standard; mehrere Warnungen/Regeln verwenden den höchsten SOC, mindestens die normale Monatsreserve.
+- Der bestehende DWD-Standard bleibt für Warnungen ohne passende Ereignisregel erhalten; vorhandene Kategorien bleiben ohne Änderung wirksam.
+- Aktive Ereignisse, Ablaufzeit und maßgebliche SOC-Regel werden auf der Startseite angezeigt.
+- Ereignisänderungen werden auch bei gleicher höchster Warnstufe berücksichtigt; gleiche SOC-Sollwerte verursachen keine wiederholten Schreibzugriffe.
+- Fehlende/ungültige Ereignisdaten pausieren die Steuerung; Testmeldungen, Vorabinformationen und zukünftige Warnungen werden ignoriert.
+- Geänderte Regeln werden beim Speichern direkt mit der aktuellen Warnlage abgeglichen.
+
 ## V0.1.6
 
 - Kompaktere Oberfläche mit kleinerem Kopfbereich, kürzeren Abständen und breiter genutzter Desktopfläche.

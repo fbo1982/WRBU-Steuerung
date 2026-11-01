@@ -29,6 +29,7 @@ def warning(**overrides):
     now = datetime.now(timezone.utc)
     return {"WARNCELLID": int(CELL), "STATUS": "Actual", "MSGTYPE": "Alert",
             "URGENCY": "Immediate", "SEVERITY": "Severe", "HEADLINE": "Sturmwarnung",
+            "EC_II": "53", "EC_GROUP": "WIND", "EVENT": "SCHWERE STURMBÖEN",
             "ONSET": (now-timedelta(hours=1)).isoformat(),
             "EXPIRES": (now+timedelta(hours=1)).isoformat(), **overrides}
 

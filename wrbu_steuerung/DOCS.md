@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.6
+# WRBU Steuerung · V0.1.7
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -49,11 +49,66 @@ Die Oberfläche aktualisiert ihre Anzeige weiterhin aus dem App-Speicher; das
 erzeugt keine zusätzlichen Modbus-Abfragen. Die letzte Bestätigung zeigt, wie
 aktuell der angezeigte SOC ist. Das Intervall ist unabhängig von der DWD-Abfrage.
 
-### Nächster Schritt: DWD-Ereignisse
+### Eigener Backup-SOC je DWD-Ereignis und Monatskategorie
 
-Eine spätere Erweiterung kann zusätzlich zur Warnstufe bestimmte Ereignisarten
-auswählen lassen, beispielsweise Sturm, Schneefall und Glatteis. In V0.1.6
-entscheidet weiterhin ausschließlich die gültige Warnstufe 2–4 über die Warnreserve.
+Unter **Kategorie → Wechselrichter auswählen → Kategorie bearbeiten** stehen
+jetzt **DWD-Ereignisregeln** zur Verfügung. Mit **Ereignisregel hinzufügen**
+eine Wettergruppe oder ein einzelnes DWD-Ereignis auswählen, die Mindestwarnstufe
+und den gewünschten Backup-SOC festlegen. Anschließend **Kategorie übernehmen**
+und **Speichern und SOC abgleichen** wählen. Ein neuer Kommunikationstest ist
+bei unveränderter WR-Verbindung nicht erforderlich.
+
+Beispiel für eine Kategorie mit 40 % Normalreserve und 60 % DWD-Standard:
+
+| Ereignis / Gruppe | Ab Stufe | Backup-SOC |
+| --- | --- | --- |
+| Wind / Sturm | 2 | 50 % |
+| Orkanböen (DWD 55) | 3 | 85 % |
+| Schneefall | 2 | 70 % |
+| Glatteis | 1 | 80 % |
+
+Dies sind Beispiele; die App legt keine Ereignisregeln automatisch an.
+Jeder Wechselrichter und jede Monatskategorie kann andere Werte erhalten.
+
+**Auswertung pro aktuell gültiger Warnung:**
+
+1. Alle passenden Ereignisregeln der aktuellen Monatskategorie ermitteln.
+2. Gibt es passende Regeln, ersetzt deren höchster SOC für diese Warnung den
+   DWD-Standard. Ein eigener Wert wie 50 % kann deshalb auch unter dem bisherigen
+   Standard von 60 % liegen.
+3. Gibt es keine passende Regel, gilt ab Warnstufe 2 der DWD-Standard der Kategorie;
+   bei Stufe 1 bleibt die normale Monatsreserve. Auch wenn eine Regel erst ab einer
+   höheren Stufe greift, bleibt darunter dieses Standardverhalten erhalten.
+4. Bei mehreren gleichzeitigen Warnungen gilt der höchste so bestimmte Wert.
+   Die normale Monatsreserve wird niemals unterschritten.
+5. Nach Teilentwarnung werden die übrigen Warnungen neu ausgewertet. Nach vollständiger
+   Entwarnung gilt wieder der normale SOC des aktuellen Monats.
+
+Eine genaue Ereignisregel und eine Gruppenregel können gleichzeitig passen;
+auch dann gilt der höchste Wert. Es gibt keine Priorität nach Reihenfolge.
+Bis zu 32 Regeln pro Kategorie sind möglich. Dieselbe Auswahl und Mindeststufe
+kann nur einmal vorhanden sein. Verschiedene Mindeststufen derselben Gruppe
+erlauben etwa 50 % ab Stufe 2 und 80 % ab Stufe 3.
+
+Die App verwendet die offiziellen **EC_II-Ereigniskennungen** und **EC_GROUP-Gruppen**
+des DWD, keine Stichwortsuche in Warnüberschriften. Enthält eine Gewitterwarnung
+zusätzlich die Gruppen Wind und Hagel, können auch deren Regeln passen. Optionale
+Begleiterscheinungen wie Tornados werden nur berücksichtigt, wenn der DWD sie
+tatsächlich als Gruppe meldet. Windregeln erfassen daher gegebenenfalls auch Wind
+innerhalb von Gewittern und Schneeverwehungen. Wer nur eine genaue Meldungsart
+erfassen möchte, wählt das einzelne DWD-Ereignis.
+
+Unbekannte neue Ereigniskennungen können über bekannte gemeldete Gruppen passen;
+ansonsten gilt der bisherige Standard. Fehlende/ungültige Ereignisdaten gelten
+als unbekannte Warnlage und führen zu keiner automatischen Absenkung.
+Vorabinformationen, Testmeldungen und noch nicht begonnene Warnungen werden
+weiterhin nicht zur SOC-Steuerung verwendet. Die DWD-Abfrage bleibt bei fünf Minuten.
+
+Die Startseite zeigt die aktiven Ereignisse mit Warnstufe und Ablaufzeit sowie
+bei Kategorien mit eigenen Regeln den Grund für den aktuellen Sollwert.
+Auch ein Ereigniswechsel bei unveränderter höchster Warnstufe wird neu ausgewertet.
+Gleiche Sollwerte erzeugen keine zusätzlichen Modbus-Schreibzugriffe.
+Beim Speichern werden neue Ereignisregeln sofort mit der aktuellen Warnlage abgeglichen.
 
 **Die WR-Prüfung und das Speichern benötigen weder Wetterstandort noch
 DWD-Sensor oder Home-Assistant-Verbindung.** Ohne gültige Wetterdaten pausiert
@@ -109,7 +164,8 @@ bzw. die zuletzt bekannte Zeitzone.
 ## Kategorien und Steuerung
 
 Jeder WR hat eigene Kategorien mit Name, exklusiv zugeordneten Monaten, normalem
-Backup-SOC und Backup-SOC für DWD-Stufen 2–4. Stufe 0/1 verwendet den normalen Wert.
+Backup-SOC, Standardreserve für DWD-Stufen 2–4 und optionalen Ereignisregeln.
+Ohne Ereignisregeln verwendet Stufe 0/1 weiterhin den normalen Wert.
 Vorabinformationen, Testmeldungen und noch nicht begonnene Warnungen lösen
 keine Unwetterreserve aus.
 
@@ -205,7 +261,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.6** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.7** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

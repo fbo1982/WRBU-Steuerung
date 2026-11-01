@@ -1,5 +1,6 @@
 """Category validation shared by the UI and runtime. No HA dependency."""
 from copy import deepcopy
+from .events import LABELS, matches, validate_event_rules
 
 
 def validate_categories(categories: list[dict]) -> list[dict]:
@@ -24,6 +25,8 @@ def validate_categories(categories: list[dict]) -> list[dict]:
                 raise ValueError("SOC muss eine ganze Zahl zwischen 0 und 100 sein")
         if category["warning_soc"] < category["normal_soc"]:
             raise ValueError("Die Warnreserve darf die normale Reserve nicht unterschreiten")
+        if "event_rules" in category:
+            category["event_rules"] = validate_event_rules(category["event_rules"], category["normal_soc"])
         category["name"] = name
         category["months"] = sorted(months)
         used.update(months)
@@ -37,13 +40,41 @@ def available_months(categories: list[dict], editing: int | None = None) -> list
     return [m for m in range(1, 13) if m not in used]
 
 
-def target_for(categories: list[dict], month: int, level: str | None):
+def decision_for(categories: list[dict], month: int, level: str | None, warnings=None):
     """Unknown weather or an unassigned month means hold current reserve."""
     if level not in ("0", "1", "2", "3", "4"):
-        return None, None
+        return {"desired": None, "category": None, "reason": "Wetterstandort/DWD-Daten fehlen oder sind veraltet."}
     category = next((c for c in categories if month in c["months"]), None)
     if category is None:
-        return None, None
-    key = "warning_soc" if int(level) >= 2 else "normal_soc"
-    return category[key], category["name"]
+        return {"desired": None, "category": None, "reason": "Der aktuelle Monat hat keine Kategorie."}
+    rules = category.get("event_rules", [])
+    if not rules:
+        key = "warning_soc" if int(level) >= 2 else "normal_soc"
+        return {"desired": category[key], "category": category["name"],
+                "reason": "DWD-Standardreserve (Stufe 2–4)" if key == "warning_soc" else "Normale Monatsreserve"}
+    valid_warnings = isinstance(warnings, list) and all(
+        isinstance(w, dict) and type(w.get("level")) is int and 1 <= w["level"] <= 4
+        and type(w.get("event_code")) is int and 1 <= w["event_code"] <= 999
+        and isinstance(w.get("groups"), list) and bool(w["groups"])
+        and all(isinstance(g, str) and bool(g) for g in w["groups"])
+        for w in warnings)
+    if warnings is None and level == "0":
+        warnings, valid_warnings = [], True
+    if not valid_warnings or max((w["level"] for w in warnings), default=0) != int(level):
+        return {"desired": None, "category": category["name"], "reason": "DWD-Ereignisdaten fehlen; Reserve bleibt unverändert."}
+    contributions = [(category["normal_soc"], "Normale Monatsreserve")]
+    for warning in warnings or []:
+        matching = [r for r in rules if matches(r, warning)]
+        if matching:
+            contributions.extend((r["soc"], LABELS[r["event"]]+f" · ab Stufe {r['min_level']}") for r in matching)
+        elif warning["level"] >= 2:
+            contributions.append((category["warning_soc"], "DWD-Standardreserve: "+warning.get("event", "Unbekanntes Ereignis")))
+    desired = max(value for value, _ in contributions)
+    reasons = list(dict.fromkeys(reason for value, reason in contributions if value == desired))
+    return {"desired": desired, "category": category["name"], "reason": "; ".join(reasons[:3])}
+
+
+def target_for(categories: list[dict], month: int, level: str | None, warnings=None):
+    decision = decision_for(categories, month, level, warnings)
+    return decision["desired"], decision["category"]
 

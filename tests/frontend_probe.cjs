@@ -34,7 +34,8 @@ async function setup(probeReply, pollReply, settings={}) {
   form.elements=Object.fromEntries(['name','profile','host','port','unit'].map(key=>[key,new Element()]));
   form.reportValidity=()=>{throw new Error('Do not validate unrelated hidden fields');};
   const calls=[];
-  const status={version:'0.1.6',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+  const status={version:'0.1.7',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+    event_catalog:[{id:'group:WIND',label:'Wind / Sturm',kind:'group'},{id:'ii:55',label:'Orkanböen',kind:'event'}],
     profiles:{sungrow_sh:'Sungrow SH'},default_categories:[{name:'Alle',months:[1,2,3,4,5,6,7,8,9,10,11,12],normal_soc:25,warning_soc:60}]};
   let polls=0, savePayload=null;
   const existing={id:"existing",connection:{name:"Haus",profile:"sungrow_sh",host:"192.0.2.10",port:502,unit:1},
@@ -226,4 +227,53 @@ test('new inverter categories can be edited in their own tab before first save',
   await ui.get('test-device').onclick();
   ui.get('tab-category').onclick();
   assert.equal(ui.get('save-device').disabled,false);
+});
+
+test('event rules are adopted per category and included in the saved payload',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('add-event-rule').onclick();
+  const row=ui.get('event-rules').children[0];
+  const soc=row.children[2].children[0];
+  soc.value='80';soc.oninput();
+  ui.get('apply-category').onclick();
+  ui.get('tab-settings').onclick();
+  ui.get('tab-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.deepEqual(payload.categories[0].event_rules,[{event:'group:WIND',min_level:2,soc:80}]);
+  assert.equal(ui.calls.filter(call=>call.url==='api/probes').length,0);
+});
+
+test('discarding an event rule edit leaves the saved category unchanged',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('add-event-rule').onclick();
+  ui.get('cancel-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.categories[0].event_rules,undefined);
+});
+
+test('a rule below the normal monthly reserve blocks adoption',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('add-event-rule').onclick();
+  const soc=ui.get('event-rules').children[0].children[2].children[0];
+  soc.value='10';soc.oninput();
+  ui.get('apply-category').onclick();
+  assert.equal(ui.get('category-editor').hidden,false);
+  assert.match(ui.get('notice').textContent,/Ereignisregeln/);
+  assert.equal(ui.get('save-device').disabled,true);
+});
+
+test('event rules can be removed before adopting the category',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('add-event-rule').onclick();
+  ui.get('event-rules').children[0].children[3].onclick();
+  ui.get('apply-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.deepEqual(payload.categories[0].event_rules,[]);
 });

@@ -12,6 +12,7 @@ import time
 import aiohttp
 
 from . import VERSION
+from .events import EVENTS
 
 DWD_URL = "https://maps.dwd.de/geoserver/dwd/ows"
 SEVERITY = {"Minor": 1, "Moderate": 2, "Severe": 3, "Extreme": 4}
@@ -79,6 +80,7 @@ def parse_time(value):
 
 def parse_warnings(data, cells):
     warnings = []
+    seen = set()
     for row in features(data):
         p = row["properties"]
         if str(p.get("WARNCELLID")) not in cells:
@@ -89,13 +91,29 @@ def parse_warnings(data, cells):
             continue
         if p.get("URGENCY") == "Future":
             continue  # DWD CAP defines this as advance information, not a current warning.
+        raw_code, raw_groups = p.get("EC_II"), p.get("EC_GROUP")
+        if (type(raw_code) not in (str, int) or not re.fullmatch(r"[0-9]{1,3}", str(raw_code))
+                or not 1 <= int(raw_code) <= 999 or not isinstance(raw_groups, str)):
+            raise WeatherError("DWD-Ereigniskennung oder Ereignisgruppen fehlen/ungültig; Reserve bleibt unverändert.")
+        code = int(raw_code)
+        groups = list(dict.fromkeys(raw_groups.split(";")))
+        if not groups or len(groups) > 32 or any(not re.fullmatch(r"[A-Z_]{1,64}", group) for group in groups):
+            raise WeatherError("DWD-Ereignisgruppen sind ungültig; Reserve bleibt unverändert.")
+        if code in (98, 99) or "TEST" in groups:
+            continue
         if p.get("URGENCY") != "Immediate" or p.get("SEVERITY") not in SEVERITY:
             raise WeatherError("DWD-Warnstufe oder Meldungstyp ist unbekannt.")
         start, end = parse_time(p.get("ONSET")), parse_time(p.get("EXPIRES"))
         if end <= start:
             raise WeatherError("Ungültiger DWD-Warnzeitraum.")
-        warnings.append({"level": SEVERITY[p["SEVERITY"]], "start": start, "end": end,
-                         "headline": str(p.get("HEADLINE") or "Wetterwarnung")})
+        warning = {"level": SEVERITY[p["SEVERITY"]], "start": start, "end": end,
+                   "event_code": code, "groups": groups,
+                   "event": str(p.get("EVENT") or EVENTS.get(code) or f"Wetterereignis (DWD {code})"),
+                   "headline": str(p.get("HEADLINE") or "Wetterwarnung")}
+        key = (code, tuple(groups), warning["level"], start, end, warning["headline"])
+        if key not in seen:
+            seen.add(key)
+            warnings.append(warning)
     return warnings
 
 
@@ -143,18 +161,23 @@ class WeatherService:
                 or any(not re.fullmatch(r"\d{9}", c) for c in config["warncell_ids"])):
             raise WeatherError("Gespeicherter Wetterstandort ist ungültig; Datei bleibt erhalten.")
 
-    def level(self):
+    def _active(self):
         if not self.config or not self._valid or time.monotonic() - self._fetched >= self.stale_seconds:
             return None
         now = datetime.now(timezone.utc)
-        return str(max((w["level"] for w in self._warnings if w["start"] <= now < w["end"]), default=0))
+        return [w for w in self._warnings if w["start"] <= now < w["end"]]
+
+    def level(self):
+        active = self._active()
+        return None if active is None else str(max((w["level"] for w in active), default=0))
 
     def snapshot(self):
-        now = datetime.now(timezone.utc)
-        level = self.level()
+        active = self._active()
+        level = None if active is None else str(max((w["level"] for w in active), default=0))
         return {"config": deepcopy(self.config), "level": level, "ready": level is not None,
                 "error": (self.error or "DWD-Daten sind veraltet; Reserve bleibt unverändert.") if level is None else "", "last_update": self.last_update,
-                "headlines": [w["headline"] for w in self._warnings if w["start"] <= now < w["end"]] if level is not None else [],
+                "headlines": [w["headline"] for w in active] if active is not None else [],
+                "warnings": [{**w, "start": w["start"].isoformat(), "end": w["end"].isoformat()} for w in active] if active is not None else None,
                 "poll_seconds": self.poll_seconds}
 
     async def search(self, address):
@@ -222,7 +245,7 @@ class WeatherService:
                 cells = config["warncell_ids"]
                 data = await self.fetch(wfs_params("Warnungen_Gemeinden", count=500,
                     CQL_FILTER="WARNCELLID IN (" + ",".join(cells) + ")",
-                    propertyName="WARNCELLID,STATUS,MSGTYPE,URGENCY,SEVERITY,ONSET,EXPIRES,HEADLINE"))
+                    propertyName="WARNCELLID,STATUS,MSGTYPE,URGENCY,SEVERITY,ONSET,EXPIRES,HEADLINE,EVENT,EC_II,EC_GROUP"))
                 warnings = parse_warnings(data, cells)
                 if self.config != config:
                     return

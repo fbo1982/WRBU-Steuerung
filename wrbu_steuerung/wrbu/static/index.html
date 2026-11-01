@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.6"><script src="static/app.js?v=0.1.6" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.7"><script src="static/app.js?v=0.1.7" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.6</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.7</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div></header>
 <main>
 <nav class="tabs" aria-label="Hauptnavigation">
@@ -62,7 +62,12 @@
 <div id="category-editor" class="category-editor" hidden>
 <div class="fields"><label>Kategoriename<input id="category-name" maxlength="80"></label>
 <label>Normaler Backup-SOC (%)<input id="normal-soc" type="number" min="0" max="100" step="1" value="25"></label>
-<label>Bei DWD-Stufe 2–4 (%)<input id="warning-soc" type="number" min="0" max="100" step="1" value="60"></label></div>
+<label>Standard bei DWD-Stufe 2–4 (%)<input id="warning-soc" type="number" min="0" max="100" step="1" value="60"></label></div>
+<div class="event-settings">
+<div class="section-title"><div><h3>DWD-Ereignisregeln</h3><p>Eigene Reserve für bestimmte Ereignisse oder ganze Wettergruppen.</p></div><button id="add-event-rule" type="button" class="secondary small">Ereignisregel hinzufügen</button></div>
+<div id="event-rules"></div>
+<p class="hint">Eine passende Ereignisregel ersetzt für diese Warnung den Standardwert. Ohne passende Regel gilt ab Stufe 2 der Standard. Bei mehreren passenden Regeln oder Warnungen zählt der höchste SOC, mindestens die normale Monatsreserve. Es zählen nur aktuell gültige Warnungen.</p>
+</div>
 <fieldset><legend>Monate</legend><div id="months" class="months"></div></fieldset>
 <p class="hint">Ausgegraute Monate gehören bereits zu einer anderen Kategorie.</p>
 <button type="button" id="apply-category">Kategorie übernehmen</button>
