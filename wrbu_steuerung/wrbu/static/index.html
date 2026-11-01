@@ -1,38 +1,63 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.4"><script src="static/app.js?v=0.1.4" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.5"><script src="static/app.js?v=0.1.5" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.4</small></h1>
-<p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div><button id="add-device">Wechselrichter anlegen</button></header>
-<main><div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.5</small></h1>
+<p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div></header>
+<main>
+<nav class="tabs" aria-label="Hauptnavigation">
+<button id="tab-home" type="button" aria-controls="page-home" aria-current="page">Startseite</button>
+<button id="tab-settings" type="button" aria-controls="page-settings">Settings</button>
+<button id="tab-category" type="button" aria-controls="page-category">Kategorie</button>
+</nav>
+<div id="connection" class="banner">Verbindung zu Home Assistant wird geprüft …</div>
 <div id="notice" role="status" hidden></div>
+<section id="page-home" aria-label="Aktueller Zustand">
+<section class="panel overview" aria-labelledby="location-title">
+<div class="section-title"><div><span class="eyebrow">ANLAGENSTANDORT</span><h2 id="location-title">Standort &amp; Wetterlage</h2></div><button id="edit-location" class="secondary small" type="button">Standort einstellen</button></div>
+<p id="home-address" class="address">Noch kein Standort eingerichtet.</p>
+<p id="weather-summary" aria-live="polite">Warte auf Wetterdaten …</p><ul id="weather-headlines"></ul>
+</section>
+<div class="section-title"><div><span class="eyebrow">LIVE-ÜBERSICHT</span><h2>Aktueller Zustand</h2><p>Bestätigte Backup-Reserve und aktuell gültige Vorgaben je Wechselrichter.</p></div></div>
+<section id="devices" class="device-grid" aria-label="Wechselrichterstatus"></section>
+</section>
+<section id="page-settings" hidden aria-label="Settings">
 <section class="panel weather-panel" aria-labelledby="weather-title">
-<div class="section-title"><div><span class="eyebrow">FÜR ALLE WECHSELRICHTER</span><h2 id="weather-title">Wetter &amp; Standort</h2></div></div>
-<p id="weather-summary" aria-live="polite">Noch kein Wetterstandort eingerichtet. Wechselrichter können trotzdem geprüft und gespeichert werden.</p>
+<div class="section-title"><div><span class="eyebrow">FÜR ALLE WECHSELRICHTER</span><h2 id="weather-title">Standort</h2></div></div>
 <form id="weather-form">
 <label>Vollständige Anlagenadresse<input id="weather-address" autocomplete="street-address" maxlength="250" placeholder="Straße Hausnummer, PLZ Ort" required></label>
-<p class="hint">Die vollständige Adresse bleibt lokal. Nur der erkannte Ortsname wird beim DWD zur Warngebietssuche angefragt. Straße und Hausnummer werden nicht übertragen. Bitte die gefundene Gemeinde und das Bundesland prüfen.</p>
+<p class="hint">Die vollständige Adresse bleibt lokal. Nur der erkannte Ortsname wird beim DWD zur Warngebietssuche angefragt. Bitte die gefundene Gemeinde und das Bundesland prüfen.</p>
 <button id="weather-search" type="submit">Adresse prüfen</button>
 <div id="weather-choice" hidden><label>Gefundene DWD-Warnregion<select id="weather-region"></select></label><button id="weather-save" type="button">Wetterstandort speichern</button></div>
 <div id="weather-message" class="hint" role="status"></div>
-</form><ul id="weather-headlines"></ul>
+</form></section>
+<section class="panel"><div class="section-title"><div><h2>Wechselrichter</h2><p>Verbindung und regelmäßigen SOC-Abgleich einstellen.</p></div><button id="add-device" type="button">Wechselrichter anlegen</button></div><div id="settings-devices"></div></section>
 </section>
-<section id="devices" class="device-grid" aria-label="Wechselrichter"></section>
+<section id="page-category" hidden aria-label="Kategorie">
+<section class="panel"><div class="section-title"><div><span class="eyebrow">REGELN JE WECHSELRICHTER</span><h2>Kategorie</h2><p>Monate und Backup-Reserve für die Jahreszeit und DWD-Warnungen festlegen.</p></div></div>
+<label>Wechselrichter auswählen<select id="category-device"></select></label>
+<p id="category-context" class="hint">Bitte zuerst unter Settings einen Wechselrichter anlegen.</p></section>
+</section>
 <section id="editor" class="panel" hidden>
-<div class="section-title"><div><span class="eyebrow">GERÄTEVERWALTUNG</span><h2 id="editor-title">Wechselrichter anlegen</h2></div><button id="close-editor" class="secondary">Abbrechen</button></div>
+<div class="section-title"><div><span id="editor-caption" class="eyebrow">GERÄTEVERWALTUNG</span><h2 id="editor-title">Wechselrichter anlegen</h2></div><button id="close-editor" type="button" class="secondary">Schließen</button></div>
 <form id="device-form" novalidate>
+<div id="connection-editor">
 <div class="fields">
 <label>Name<input name="name" maxlength="80" required placeholder="z. B. Hausanlage"></label>
 <label>Geräteprofil<select name="profile" required></select></label>
 <label>IP-Adresse<input name="host" required placeholder="192.168.1.100"></label>
 <label>TCP-Port<input name="port" type="number" min="1" max="65535" value="502" required></label>
 <label>Modbus-Geräte-ID<input name="unit" type="number" min="1" max="247" value="1" required></label>
-
+<label>Abfrageintervall (Minuten)<input id="check-interval" name="check_interval_minutes" type="number" min="0" max="1440" step="1" value="0"></label>
 </div>
-<p id="connection-hint" class="hint">Direkter SH-Zugriff: IP des Wechselrichters/WiNet verwenden. Für die Weiterleitung über iHomeManager das entsprechende Profil auswählen.</p>
+<p class="hint">0 = Aus. Sonst alle 1–1440 Minuten den Backup-SOC lesen, mit der gültigen Monats-/DWD-Vorgabe vergleichen und nur eine Abweichung korrigieren. Die übrigen WR-Einstellungen werden nicht verändert.</p>
+<p id="connection-hint" class="hint"></p>
 <div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Backup-SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>
 <div id="test-result" class="result" role="status" aria-live="polite" aria-atomic="true" hidden></div>
-<hr><div class="section-title"><div><h2>Kategorien</h2><p>Jeder Monat kann genau einer Kategorie zugeordnet werden.</p></div><button type="button" id="add-category" class="secondary">Kategorie hinzufügen</button></div>
+<p class="hint">Die Monatsregeln werden im Reiter „Kategorie“ bearbeitet. Ein neuer WR erhält zunächst die Standardkategorien.</p>
+</div>
+<div id="categories-editor" hidden>
+<div class="section-title"><div><h2>Kategorien</h2><p>Jeder Monat kann genau einer Kategorie zugeordnet werden.</p></div><button type="button" id="add-category" class="secondary">Kategorie hinzufügen</button></div>
 <div id="categories"></div><p id="free-months" class="hint"></p>
 <div id="category-editor" class="category-editor" hidden>
 <div class="fields"><label>Kategoriename<input id="category-name" maxlength="80"></label>
@@ -42,9 +67,10 @@
 <p class="hint">Ausgegraute Monate gehören bereits zu einer anderen Kategorie.</p>
 <button type="button" id="apply-category">Kategorie übernehmen</button>
 <button type="button" id="cancel-category" class="secondary">Verwerfen</button></div>
+</div>
 <div id="save-result" class="result" role="status" aria-live="polite" hidden></div>
-<div class="save-bar"><p id="save-reason" aria-live="polite">Neue oder geänderte Verbindungsdaten bitte zuerst prüfen. Bestehende Kategorien können direkt gespeichert werden.</p><button id="save-device" type="submit" disabled>Speichern und SOC abgleichen</button></div>
+<div class="save-bar"><p id="save-reason" aria-live="polite">Neue oder geänderte Verbindungsdaten bitte zuerst prüfen.</p><button id="save-device" type="submit" disabled>Speichern und SOC abgleichen</button></div>
 </form></section>
-<footer>V0.1.0 · Ereignisgesteuerte Modbus-Steuerung · Einstellungen bleiben bei App-Neustarts erhalten.</footer></main>
+<footer>WRBU Steuerung · Einstellungen bleiben bei App-Neustarts erhalten.</footer></main>
 </body></html>
 

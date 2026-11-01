@@ -111,6 +111,8 @@ def main():
     app = create_app(manager, bridge)
 
     async def lifecycle(app):
+        manager.start_intervals()
+        manager.trigger()
         tasks = [asyncio.create_task(bridge.run()), asyncio.create_task(bridge.calendar()),
                  asyncio.create_task(manager.weather.run())]
         try:

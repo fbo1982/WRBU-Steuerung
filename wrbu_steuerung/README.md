@@ -1,7 +1,8 @@
-# WRBU Steuerung · V0.1.4
+# WRBU Steuerung · V0.1.5
 
 WR-Kommunikation ohne DWD-Sensor prüfen und speichern.
-Wetterstandort getrennt unter **Wetter & Standort** mit der vollständigen Adresse einrichten.
+**Startseite** zeigt Zustand und Standort. Unter **Settings** Standort und WR
+einschließlich Abfrageintervall einstellen. Im Reiter **Kategorie** die Monatsregeln bearbeiten.
 
 Die ausführliche Anleitung steht im Reiter **Dokumentation**.
 

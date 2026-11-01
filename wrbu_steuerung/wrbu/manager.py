@@ -1,7 +1,7 @@
 """Persistent devices, short-lived successful probes and event-driven control."""
 import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import ipaddress
 import json
 import logging
@@ -24,6 +24,12 @@ DEFAULT_CATEGORIES = [
     {"name": "Übergangszeit", "months": [3, 11], "normal_soc": 30, "warning_soc": 60},
     {"name": "Übrige Monate", "months": [2, 4, 5, 6, 7, 8, 9, 10], "normal_soc": 25, "warning_soc": 60},
 ]
+
+
+def validate_interval(value):
+    if type(value) is not int or not 0 <= value <= 1440:
+        raise ValueError("Abfrageintervall: 0 (Aus) oder 1 bis 1440 ganze Minuten eingeben.")
+    return value
 
 
 def normalize_connection(data):
@@ -63,6 +69,7 @@ class Store:
             serials.add(device["serial"])
             # V0.1.0 stored the DWD sensor on the inverter. Weather is now global.
             device["connection"] = normalize_connection(device["connection"])
+            device["check_interval_minutes"] = validate_interval(device.get("check_interval_minutes", 0))
             if not validate_categories(device["categories"]):
                 raise ValueError("Ein gespeichertes Gerät hat keine Kategorien.")
         return devices
@@ -94,6 +101,8 @@ class Manager:
         self._pending = set()
         self._proofs = {}
         self._retry = {}
+        self._checks = {}
+        self._forced = set()
         self._tasks = set()
         self._queued = set()
         self._lock = asyncio.Lock()
@@ -208,6 +217,8 @@ class Manager:
             existing = self.devices.get(identity) if identity else None
             if identity and existing is None:
                 raise ValueError("Das Gerät wurde inzwischen gelöscht.")
+            interval = validate_interval(data.get("check_interval_minutes",
+                existing.get("check_interval_minutes", 0) if existing else 0))
             endpoint_keys = ("profile", "host", "port", "unit")
             unchanged = existing is not None and all(
                 connection[key] == existing["connection"][key] for key in endpoint_keys)
@@ -226,6 +237,7 @@ class Manager:
             if any(d["serial"] == serial and key != identity for key, d in self.devices.items()):
                 raise ValueError("Dieser Wechselrichter ist bereits angelegt.")
             device = {"id": identity, "connection": connection, "categories": categories,
+                      "check_interval_minutes": interval,
                       "serial": serial, "model": model, "test_result": test_result}
             candidate = deepcopy(self.devices)
             candidate[identity] = device
@@ -235,6 +247,7 @@ class Manager:
             if valid_proof:
                 self._proofs.pop(data["proof"], None)
             self._cancel_retry(identity)
+            self._cancel_check(identity)
             self._desired.pop(identity, None)
             self._pending.discard(identity)
             state = self.runtime.setdefault(identity, {})
@@ -244,6 +257,7 @@ class Manager:
             # A save is an explicit reconciliation event, even if the target is
             # unchanged: detect manual drift by reading the real inverter.
             await self._evaluate_locked(identity, force=True, progress=progress)
+            self._schedule_check(identity)
             state = self.runtime[identity]
             applied = state["status"] in ("gesetzt", "bereits korrekt")
             outcome = ("written" if state["status"] == "gesetzt" else
@@ -271,6 +285,8 @@ class Manager:
         categories = validate_categories(data["categories"])
         payload = {"id": data.get("id"), "connection": connection,
                    "categories": categories, "proof": data.get("proof")}
+        if "check_interval_minutes" in data:
+            payload["check_interval_minutes"] = validate_interval(data["check_interval_minutes"])
         fingerprint = json.dumps(payload, sort_keys=True)
         now = time.monotonic()
         self._save_jobs = {key: job for key, job in self._save_jobs.items()
@@ -325,6 +341,8 @@ class Manager:
             await asyncio.to_thread(self.store.write, candidate)
             self.devices = candidate
             self._cancel_retry(identity)
+            self._cancel_check(identity)
+            self._forced.discard(identity)
             self._desired.pop(identity, None)
             self._pending.discard(identity)
             self.runtime.pop(identity, None)
@@ -341,10 +359,38 @@ class Manager:
                 self.trigger(identity)
             self._retry[identity] = asyncio.get_running_loop().call_later(self.retry_seconds, due)
 
-    def trigger(self, identity=None):
+    def start_intervals(self):
+        for identity in self.devices:
+            self._schedule_check(identity)
+
+    def _cancel_check(self, identity):
+        timer = self._checks.pop(identity, None)
+        if timer:
+            timer.cancel()
+        self.runtime.get(identity, {}).pop("next_check", None)
+
+    def _schedule_check(self, identity):
+        device = self.devices.get(identity)
+        if self._stopped or not device or identity in self._checks:
+            return
+        seconds = device.get("check_interval_minutes", 0) * 60
+        if not seconds:
+            return
+        self.runtime.setdefault(identity, {})["next_check"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+        def due():
+            self._checks.pop(identity, None)
+            self.runtime.get(identity, {}).pop("next_check", None)
+            self.trigger(identity, force=True)
+        self._checks[identity] = asyncio.get_running_loop().call_later(seconds, due)
+
+    def trigger(self, identity=None, *, force=False):
         if self._stopped:
             return
         for key in ([identity] if identity else list(self.devices)):
+            if force:
+                self._forced.add(key)
             # Coalesce bursts while a write is in flight. Evaluate reads fresh HA data.
             if key in self._queued:
                 continue
@@ -359,9 +405,14 @@ class Manager:
             # may queue one more evaluation without losing the new warning state.
             async with self._lock:
                 self._queued.discard(identity)
-                await self._evaluate_locked(identity)
+                force = identity in self._forced
+                self._forced.discard(identity)
+                # Periodic checks never bypass the existing 30-second retry.
+                await self._evaluate_locked(identity, force=force and identity not in self._retry)
         except Exception:
             LOGGER.exception("Unerwarteter Steuerungsfehler für Gerät %s", identity)
+        finally:
+            self._schedule_check(identity)
 
     async def _evaluate_locked(self, identity, *, force=False, progress=None):
         if self._stopped or identity not in self.devices:
@@ -404,6 +455,8 @@ class Manager:
         self._stopped = True
         for key in list(self._retry):
             self._cancel_retry(key)
+        for key in list(self._checks):
+            self._cancel_check(key)
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()

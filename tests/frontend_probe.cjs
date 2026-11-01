@@ -12,6 +12,9 @@ class Element {
   append(...children){this.children.push(...children);}
   replaceChildren(...children){this.children=children;}
   addEventListener(name,callback){this.listeners[name]=callback;}
+  setAttribute(name,value){this[name]=value;}
+  removeAttribute(name){delete this[name];}
+  checkValidity(){return true;}
   reportValidity(){return true;}
   scrollIntoView(){}
   querySelectorAll(selector){
@@ -31,11 +34,11 @@ async function setup(probeReply, pollReply, settings={}) {
   form.elements=Object.fromEntries(['name','profile','host','port','unit'].map(key=>[key,new Element()]));
   form.reportValidity=()=>{throw new Error('Do not validate unrelated hidden fields');};
   const calls=[];
-  const status={version:'0.1.4',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+  const status={version:'0.1.5',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
     profiles:{sungrow_sh:'Sungrow SH'},default_categories:[{name:'Alle',months:[1,2,3,4,5,6,7,8,9,10,11,12],normal_soc:25,warning_soc:60}]};
   let polls=0, savePayload=null;
   const existing={id:"existing",connection:{name:"Haus",profile:"sungrow_sh",host:"192.0.2.10",port:502,unit:1},
-    categories:structuredClone(status.default_categories),model:"SH25T",serial:"SN001",
+    categories:structuredClone(status.default_categories),check_interval_minutes:0,model:"SH25T",serial:"SN001",
     test_result:{before:25,after:25,success:true},runtime:{current:25}};
   if(settings.existing)status.devices=[existing];
   const context=vm.createContext({
@@ -53,7 +56,7 @@ async function setup(probeReply, pollReply, settings={}) {
       }
       if(url==='api/saves/save1')return {ok:true,status:200,json:async()=>({
         id:'save1',state:'complete',stage:'complete',result:{
-          ...existing,id:savePayload.id||'saved',connection:savePayload.connection,categories:savePayload.categories,
+          ...existing,id:savePayload.id||'saved',connection:savePayload.connection,categories:savePayload.categories,check_interval_minutes:savePayload.check_interval_minutes,
           save_result:{saved:true,applied:!settings.savePaused,outcome:settings.savePaused?'paused':'written',
             message:settings.savePaused?'Einstellungen gespeichert. SOC-Abgleich pausiert.':'Einstellungen gespeichert. Backup-SOC auf 25 % gesetzt und zurückgelesen.',
             category:'Alle',desired:settings.savePaused?null:25,current:25,warning_level:settings.savePaused?null:'0'}
@@ -168,4 +171,59 @@ test('paused weather reconciliation reports that settings were saved',async()=>{
   assert.match(ui.get('save-result').textContent,/Einstellungen gespeichert/);
   assert.match(ui.get('save-result').textContent,/pausiert/);
   assert.match(ui.get('save-result').className,/pending/);
+});
+
+test('tabs separate overview, settings and categories without losing the draft',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  ui.get('tab-category').onclick();
+  assert.equal(ui.get('page-category').hidden,false);
+  assert.equal(ui.get('connection-editor').hidden,true);
+  assert.equal(ui.get('categories-editor').hidden,false);
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('normal-soc').value='45';
+  ui.get('apply-category').onclick();
+  ui.get('tab-home').onclick();
+  assert.equal(ui.get('editor').hidden,true);
+  assert.equal(ui.get('page-home').hidden,false);
+  ui.get('tab-settings').onclick();
+  assert.equal(ui.get('connection-editor').hidden,false);
+  ui.get('check-interval').value='10';
+  ui.get('tab-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.categories[0].normal_soc,45);
+  assert.equal(payload.check_interval_minutes,10);
+  assert.equal(ui.get('category-device').value,'existing');
+});
+
+test('changing interval alone does not invalidate the existing endpoint',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  ui.get('check-interval').value='15';
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.check_interval_minutes,15);
+  assert.equal(ui.calls.filter(call=>call.url==='api/probes').length,0);
+  assert.equal(ui.get('check-interval').value,'15');
+});
+
+test('invalid interval prevents saving and returns to settings',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  ui.get('tab-category').onclick();
+  ui.get('check-interval').value='1.5';
+  await ui.form.onsubmit({preventDefault(){}});
+  assert.equal(ui.calls.filter(call=>call.url==='api/saves').length,0);
+  assert.equal(ui.get('page-settings').hidden,false);
+  assert.match(ui.get('notice').textContent,/Abfrageintervall/);
+});
+
+test('new inverter categories can be edited in their own tab before first save',async()=>{
+  const ui=await setup(queued,success);
+  ui.get('tab-category').onclick();
+  assert.equal(ui.get('category-device').value,'__new');
+  assert.equal(ui.get('categories-editor').hidden,false);
+  assert.equal(ui.get('save-device').disabled,true);
+  ui.get('tab-settings').onclick();
+  await ui.get('test-device').onclick();
+  ui.get('tab-category').onclick();
+  assert.equal(ui.get('save-device').disabled,false);
 });

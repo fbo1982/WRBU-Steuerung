@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.4
+# WRBU Steuerung · V0.1.5
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -10,9 +10,47 @@ direkter Modbus-Prüfung und integrierten DWD-Warnungen.
 1. **Einstellungen → Apps → App installieren → ⋮ → Repositories** öffnen.
 2. `https://github.com/fbo1982/WRBU-Steuerung` hinzufügen.
 3. **WRBU Steuerung** installieren, starten und **Weboberfläche öffnen** wählen.
-4. **Wechselrichter anlegen**: Name, Geräteprofil, IP, TCP-Port und Modbus-Geräte-ID eingeben.
+4. Im Reiter **Settings → Wechselrichter anlegen**: Name, Geräteprofil, IP, TCP-Port und Modbus-Geräte-ID eingeben. Bei Bedarf ein Abfrageintervall setzen.
 5. **Kommunikation prüfen**. Nach erfolgreichem Test Kategorien bearbeiten und
    **Speichern und SOC abgleichen** wählen.
+
+## Oberfläche
+
+- **Startseite:** gespeicherte Anlagenadresse, DWD-Warngebiet und Warnlage sowie der aktuelle Zustand jedes WR mit bestätigtem Backup-SOC, Sollwert, Kategorie, letztem erfolgreichen Abgleich und nächster Intervallprüfung.
+- **Settings:** zentralen Standort setzen und Wechselrichter mit Verbindung, Kommunikationsprüfung und Abfrageintervall verwalten.
+- **Kategorie:** Wechselrichter auswählen und seine Kategorien mit Monaten, normaler Reserve und DWD-Reserve erstellen oder bearbeiten.
+
+Ein Reiterwechsel erhält den aktuellen Entwurf. Beim Wechsel auf einen anderen WR
+oder Schließen des Editors wird vor dem Verwerfen ungespeicherter Änderungen gefragt.
+**Kategorie übernehmen** ändert den Entwurf; erst **Speichern und SOC abgleichen**
+speichert dauerhaft und gleicht den aktuellen WR-SOC ab. Bei einem neuen WR können
+die Standardkategorien vor dem ersten Speichern im Reiter Kategorie angepasst werden.
+
+### Optionaler regelmäßiger SOC-Abgleich
+
+Unter **Settings → WR-Einstellungen → Abfrageintervall (Minuten)** bedeutet
+**0 = Aus**. Dies bleibt der Standard auch für bestehende Geräte. Möglich sind
+**1–1440 Minuten** pro WR. Ein geändertes Intervall benötigt bei unveränderter
+Verbindung keinen neuen Kommunikationstest.
+
+Nach jedem Intervall wird der tatsächliche Backup-SOC gelesen und mit der aktuell
+gültigen Monats-/DWD-Vorgabe verglichen. Nur eine Abweichung wird geschrieben
+und zurückgelesen. Andere WR-Einstellungen werden nicht abgefragt oder verändert.
+Bei fehlender Warnlage oder Monat ohne Kategorie pausiert auch dieser Abgleich.
+Modbus-Fehler verwenden denselben einzelnen 30-Sekunden-Retry; Intervallprüfungen
+umgehen ihn nicht. Es gibt keine parallelen WR-Zugriffe und keinen Rückstau verpasster
+Intervallprüfungen. Der nächste Termin wird nach Abschluss des Intervallauftrags
+geplant. Das Intervall bleibt bei Neustarts erhalten und beginnt dann erneut.
+
+Die Oberfläche aktualisiert ihre Anzeige weiterhin aus dem App-Speicher; das
+erzeugt keine zusätzlichen Modbus-Abfragen. Die letzte Bestätigung zeigt, wie
+aktuell der angezeigte SOC ist. Das Intervall ist unabhängig von der DWD-Abfrage.
+
+### Nächster Schritt: DWD-Ereignisse
+
+Eine spätere Erweiterung kann zusätzlich zur Warnstufe bestimmte Ereignisarten
+auswählen lassen, beispielsweise Sturm, Schneefall und Glatteis. In V0.1.5
+entscheidet weiterhin ausschließlich die gültige Warnstufe 2–4 über die Warnreserve.
 
 **Die WR-Prüfung und das Speichern benötigen weder Wetterstandort noch
 DWD-Sensor oder Home-Assistant-Verbindung.** Ohne gültige Wetterdaten pausiert
@@ -24,7 +62,7 @@ Installation aus dem Quellcode gebaut. HACS ist nicht erforderlich.
 
 ## Wetter & Standort – zentral für alle WR
 
-Der eigene Bereich **Wetter & Standort** ist unabhängig von der Geräteverwaltung.
+Der Standortbereich im Reiter **Settings** ist unabhängig von der Geräteverwaltung.
 
 1. Vollständige Anlagenadresse im Format **Straße Hausnummer, PLZ Ort** eingeben.
 2. **Adresse prüfen** wählen.
@@ -83,7 +121,7 @@ jeweils 60 % bei Warnung. Alle Regeln sind bearbeitbar.
 Auswertung beim Start mit gültigen Wetterdaten, nach gespeicherten Änderungen,
 bei relevanten Warnungsänderungen und am 1. jedes Monats um 00:05 Uhr
 in der Home-Assistant-Zeitzone. Gleiche SOC-Sollwerte erzeugen nach erfolgreicher
-Ausführung keine weiteren Modbus-Anfragen. Vor einem erforderlichen Schreiben
+Ausführung ohne aktiviertes Abfrageintervall keine weiteren Modbus-Anfragen. Vor einem erforderlichen Schreiben
 wird physisch gelesen; ist der Sollwert schon erreicht, entfällt das Schreiben.
 
 Modbus-Fehler führen zu einem einzelnen Retry-Timer nach 30 Sekunden.
@@ -164,7 +202,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.4** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.5** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

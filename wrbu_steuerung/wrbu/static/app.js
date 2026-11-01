@@ -5,7 +5,58 @@ let state = null, draft = null, editingCategory = null, proof = null, checking =
 let proofTimer = null;
 let saving = false, lockedControls = [], proofSignature = null;
 let editorEpoch = 0, proofReason = "Bitte zuerst die Kommunikation erfolgreich prüfen.";
+let currentView = "home", draftBaseline = "", pickerSignature = "";
 const form = $("device-form");
+function draftSignature() {
+  return draft?JSON.stringify({connection:connection(),categories:draft.categories,interval:$("check-interval").value}):"";
+}
+function mayLeaveDraft() {
+  return !draft || (draftSignature()===draftBaseline && $("category-editor").hidden) ||
+    confirm("Nicht gespeicherte Änderungen verwerfen?");
+}
+function syncView() {
+  for(const view of ["home","settings","category"]){
+    $("page-"+view).hidden=view!==currentView;
+    if(view===currentView)$("tab-"+view).setAttribute("aria-current","page");
+    else $("tab-"+view).removeAttribute("aria-current");
+  }
+  $("editor").hidden=!draft||currentView==="home";
+  $("connection-editor").hidden=currentView!=="settings";
+  $("categories-editor").hidden=currentView!=="category";
+  $("editor-caption").textContent=currentView==="category"?"MONATSREGELN":"GERÄTEVERWALTUNG";
+  $("editor-title").textContent=currentView==="category"?"Kategorien · "+(connection().name||"Neuer Wechselrichter"):
+    draft?.id?"Wechselrichter bearbeiten":"Wechselrichter anlegen";
+  renderCategoryPicker();
+}
+function showView(view) {
+  if(saving)return;
+  currentView=view;
+  if(view==="category"&&!draft&&state?.devices.length)openEditor(state.devices[0],"category");
+  else syncView();
+}
+for(const view of ["home","settings","category"])$("tab-"+view).onclick=()=>showView(view);
+$("edit-location").onclick=()=>showView("settings");
+function renderCategoryPicker() {
+  const devices=state?.devices||[], choices=devices.map(d=>[d.id,d.connection.name]);
+  if(draft&&!draft.id)choices.push(["__new",connection().name||"Neuer Wechselrichter (Entwurf)"]);
+  const signature=JSON.stringify(choices);
+  if(signature!==pickerSignature){
+    pickerSignature=signature;
+    const placeholder=element("option","Wechselrichter auswählen");placeholder.value="";
+    $("category-device").replaceChildren(placeholder,...choices.map(([id,name])=>{const option=element("option",name);option.value=id;return option;}));
+  }
+  $("category-device").value=draft?(draft.id||"__new"):"";
+  $("category-device").disabled=saving||checking||!choices.length;
+  $("category-context").textContent=draft?"Kategorien für „"+(connection().name||"Neuer Wechselrichter")+"“. Änderungen übernehmen und anschließend unten speichern.":
+    devices.length?"Bitte einen Wechselrichter auswählen.":"Bitte zuerst unter Settings einen Wechselrichter anlegen.";
+}
+$("category-device").onchange=()=>{
+  const id=$("category-device").value;
+  if((draft?.id|| (draft?"__new":""))===id)return;
+  const device=state.devices.find(d=>d.id===id);
+  if(device)openEditor(device,"category");
+  renderCategoryPicker();
+};
 function element(tag, text, className) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -79,6 +130,10 @@ function categoryDraftChanged() {
   showSave("Kategorieänderungen im Entwurf übernommen. Bitte „Speichern und SOC abgleichen“ wählen, um sie dauerhaft zu speichern und den WR zu prüfen.",false,true);
 }
 function validConnection() {
+  if(!["name","profile","host","port","unit"].every(key=>form.elements[key].checkValidity())){
+    showView("settings");
+    return ["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity());
+  }
   return ["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity());
 }
 const probeStages={save_config:"Einstellungen speichern",queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Denselben SOC einmal schreiben",readback:"SOC zurücklesen und vergleichen",complete:"Abgeschlossen"};
@@ -110,45 +165,60 @@ function showProbeReport(job, target) {
     "\nZurückgelesen: "+(r.after??"–")+" %"+
     (success?"\nDu kannst den Wechselrichter jetzt speichern.":"\nSpeichern bleibt gesperrt. Bitte den angezeigten Grund prüfen."),!success);
 }
-function openEditor(device=null) {
-  if(saving)return;
+function openEditor(device=null, view="settings") {
+  if(saving||checking||!mayLeaveDraft())return;
   $("save-result").hidden=true;
   editorEpoch++; notice(); invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen."); $("test-result").hidden=true;
-  draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1},categories:structuredClone(state.default_categories)};
+  draft=device?structuredClone(device):{id:null,connection:{name:"",profile:"sungrow_sh",host:"",port:502,unit:1},categories:structuredClone(state.default_categories),check_interval_minutes:0};
   $("editor-title").textContent=device?"Wechselrichter bearbeiten":"Wechselrichter anlegen";
   form.elements.profile.replaceChildren(...Object.entries(state.profiles).map(([value,label])=>{
     const option=element("option",label);option.value=value;return option;
   }));
   for (const [key,value] of Object.entries(draft.connection)) if(form.elements[key]) form.elements[key].value=value;
+  $("check-interval").value=draft.check_interval_minutes??0;
+  draftBaseline=draftSignature();
+  currentView=view;
   updateConnectionHint();
   $("editor").hidden=false; $("category-editor").hidden=true;
-  renderCategories(); $("editor").scrollIntoView({behavior:"smooth",block:"start"});
+  renderCategories();syncView(); $("editor").scrollIntoView({behavior:"smooth",block:"start"});
 }
 function renderDevices() {
   const list=$("devices"); list.replaceChildren();
-  if (!state.devices.length) {list.append(element("div","Noch kein Wechselrichter angelegt. Lege deine erste Anlage an und prüfe die Kommunikation.","empty"));return;}
+  if (!state.devices.length) {list.append(element("div","Noch kein Wechselrichter angelegt. Unter Settings die erste Anlage einrichten.","empty"));renderSettingsDevices();renderCategoryPicker();return;}
   for (const device of state.devices) {
     const runtime=device.runtime, card=element("article",undefined,"card");
     card.append(element("span",runtime.status||"Warte auf DWD","eyebrow"),element("h2",device.connection.name),
-      element("div",device.model+" · "+device.connection.host+":"+device.connection.port,"muted"));
+      element("div",device.model,"muted"));
     const soc=element("div",runtime.current===null||runtime.current===undefined?"–":String(runtime.current),"soc");
     soc.append(element("span"," % Backup-SOC"));card.append(soc);
     const dl=element("dl");
-    for(const [name,value] of [["Sollwert",runtime.desired===null||runtime.desired===undefined?"–":runtime.desired+" %"],["Kategorie",runtime.category||"–"],["DWD-Stufe",runtime.warning_level??"unbekannt"],["Seriennummer",device.serial]]) {
+    for(const [name,value] of [["Sollwert",runtime.desired===null||runtime.desired===undefined?"–":runtime.desired+" %"],["Kategorie",runtime.category||"–"],["DWD-Stufe",runtime.warning_level??"unbekannt"],["Abfrageintervall",device.check_interval_minutes?device.check_interval_minutes+" Min.":"Aus"]]) {
       const block=element("div"); block.append(element("dt",name),element("dd",String(value)));dl.append(block);
     }
     card.append(dl);
     if(runtime.last_verified) card.append(element("p","Zuletzt vom WR bestätigt: "+new Date(runtime.last_verified).toLocaleString("de-DE"),"muted"));
     if(runtime.error) card.append(element("p",runtime.error,"error"));
-    const test=device.test_result;
-    card.append(element("p","Einrichtungstest: "+test.before+" % gelesen → "+test.after+" % bestätigt","muted"));
+    if(runtime.next_check)card.append(element("p","Nächster Abgleich: "+new Date(runtime.next_check).toLocaleString("de-DE"),"muted"));
     const actions=element("div",undefined,"actions");
-    const edit=element("button","Bearbeiten","secondary small");edit.onclick=()=>openEditor(device);
+    const edit=element("button","Settings","secondary small");edit.onclick=()=>openEditor(device);
+    const category=element("button","Kategorie","secondary small");category.onclick=()=>openEditor(device,"category");
+    actions.append(edit,category);card.append(actions);list.append(card);
+  }
+  renderSettingsDevices();renderCategoryPicker();
+}
+function renderSettingsDevices(){
+  const list=$("settings-devices");list.replaceChildren();
+  if(!state.devices.length){list.append(element("p","Noch kein Wechselrichter eingerichtet.","hint"));return;}
+  for(const device of state.devices){
+    const row=element("div",undefined,"category-row"),details=element("div"),actions=element("div",undefined,"actions");
+    details.append(element("strong",device.connection.name),element("p",device.model+" · "+device.connection.host+":"+device.connection.port+" · Geräte-ID "+device.connection.unit+" · SN "+device.serial));
+    const edit=element("button","Einstellungen","secondary small");edit.disabled=saving;edit.onclick=()=>openEditor(device);
     const remove=element("button","Löschen","danger small");remove.onclick=async()=>{
-      if(saving)return;
+      if(saving||checking)return;
+      if(draft?.id===device.id&&!mayLeaveDraft())return;
       if(!confirm("Wechselrichter „"+device.connection.name+"“ und seine Regeln löschen? Der WR-Wert bleibt erhalten."))return;
-      try{await api("api/devices/"+encodeURIComponent(device.id),{method:"DELETE"});await refresh();}catch(error){notice(error.message);}
-    };actions.append(edit,remove);card.append(actions);list.append(card);
+      try{await api("api/devices/"+encodeURIComponent(device.id),{method:"DELETE"});if(draft?.id===device.id){draft=null;syncView();}await refresh();}catch(error){notice(error.message);}
+    };remove.disabled=saving;actions.append(edit,remove);row.append(details,actions);list.append(row);
   }
 }
 function renderCategories() {
@@ -190,7 +260,7 @@ $("apply-category").onclick=()=>{
 $("cancel-category").onclick=()=>{$("category-editor").hidden=true;buttons();};
 $("add-category").onclick=()=>openCategory();
 $("add-device").onclick=()=>state&&openEditor();
-$("close-editor").onclick=()=>{if(saving)return;editorEpoch++;$("editor").hidden=true;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();};
+$("close-editor").onclick=()=>{if(saving||checking||!mayLeaveDraft())return;editorEpoch++;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();syncView();};
 for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
 form.elements.profile.addEventListener("change",updateConnectionHint);
 $("test-device").onclick=async()=>{
@@ -235,7 +305,9 @@ form.onsubmit=async event=>{
   if(!verifiedConnection()&&!unchangedSavedConnection()){
     showSave("Neue oder geänderte Verbindungsdaten bitte zuerst erfolgreich prüfen.",true);buttons();return;
   }
-  const payload={id:draft.id,connection:connection(),categories:structuredClone(draft.categories),proof:verifiedConnection()?proof:null};
+  const interval=Number($("check-interval").value);
+  if(!Number.isInteger(interval)||interval<0||interval>1440){notice("Abfrageintervall: 0 (Aus) oder 1 bis 1440 ganze Minuten eingeben.");showView("settings");return;}
+  const payload={id:draft.id,connection:connection(),categories:structuredClone(draft.categories),check_interval_minutes:interval,proof:verifiedConnection()?proof:null};
   saving=true;lockEditor(true);buttons();notice();
   $("save-device").textContent="Speichern läuft …";
   showSave("Einstellungen werden gespeichert. Der aktuell gültige SOC wird anhand von Monat und DWD-Lage ermittelt und am WR geprüft.");
@@ -252,7 +324,9 @@ form.onsubmit=async event=>{
     if(job.state!=="complete"||!job.result?.save_result?.saved)throw new Error(job.error||job.message||"Speichern wurde nicht bestätigt. Bitte den gespeicherten Stand prüfen.");
     const device=job.result, result=device.save_result;
     draft=structuredClone(device);
+    $("check-interval").value=device.check_interval_minutes??interval;
     for(const [key,value] of Object.entries(draft.connection))if(form.elements[key])form.elements[key].value=value;
+    draftBaseline=draftSignature();
     proof=null;proofSignature=null;clearTimeout(proofTimer);
     proofReason="Gespeicherte WR-Verbindung kann für weitere Kategorieänderungen verwendet werden.";
     const details="\nKategorie: "+(result.category||"–")+" · DWD-Stufe: "+(result.warning_level??"unbekannt")+
@@ -263,7 +337,7 @@ form.onsubmit=async event=>{
   }catch(error){
     showSave("Speichervorgang nicht vollständig bestätigt\n"+error.message+"\nBitte den gespeicherten Stand kontrollieren; die WR-Prüfung kann im Hintergrund weiterlaufen.",true);
   }finally{
-    saving=false;lockEditor(false);$("save-device").textContent="Speichern und SOC abgleichen";buttons();
+    saving=false;lockEditor(false);$("save-device").textContent="Speichern und SOC abgleichen";buttons();syncView();
     $("save-result").scrollIntoView({behavior:"smooth",block:"nearest"});
   }
 };
@@ -271,6 +345,7 @@ function renderWeather(){
   const weather=state.weather;
   if(!weather)return;
   const config=weather.config;
+  $("home-address").textContent=config?.address||"Noch kein Standort eingerichtet. Unter Settings eine Anlagenadresse hinterlegen.";
   $("weather-summary").textContent=config
     ?config.label+" · "+(weather.ready?"DWD-Stufe "+weather.level:"Warnlage unbekannt")+" · "+(weather.last_update?"Letzte Abfrage: "+new Date(weather.last_update).toLocaleString("de-DE"):"Warte auf erste DWD-Abfrage")
     :"Noch kein Wetterstandort gespeichert. WR-Kommunikation kann unabhängig davon geprüft werden.";

@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## V0.1.5
+
+- Drei Reiter: Startseite mit Zustand und Standort, Settings mit Standort-/WR-Verwaltung und Kategorie mit Auswahl des WR.
+- Bearbeitungsentwürfe bleiben beim Wechsel der Reiter erhalten; Warnung beim Verwerfen ungespeicherter Änderungen.
+- Optionales Abfrageintervall je WR: 0 = Aus, sonst 1–1440 Minuten. Vorhandene Geräte bleiben ohne Intervall.
+- Intervall prüft den tatsächlichen Backup-SOC gegen aktuelle Monats-/DWD-Regeln und schreibt nur Abweichungen.
+- Letzte Bestätigung und nächster Intervallabgleich werden auf der Startseite angezeigt.
+- Timer werden beim Ändern, Deaktivieren, Löschen und Stoppen sauber beendet; bestehender 30-Sekunden-Retry bleibt erhalten.
+- DWD-Ereignisauswahl als Folgeschritt dokumentiert; bestehende Warnstufen bleiben wirksam.
+
 ## V0.1.4
 
 - Kategorieänderungen an gespeicherten Geräten können ohne erneuten Kommunikationstest gespeichert werden.
