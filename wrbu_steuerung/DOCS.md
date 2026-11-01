@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.5
+# WRBU Steuerung · V0.1.6
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -15,6 +15,9 @@ direkter Modbus-Prüfung und integrierten DWD-Warnungen.
    **Speichern und SOC abgleichen** wählen.
 
 ## Oberfläche
+
+Die Desktopansicht nutzt einen kompakten Kopfbereich und schmale Abstände.
+Standort und WR-Verwaltung stehen auf breiten Bildschirmen nebeneinander.
 
 - **Startseite:** gespeicherte Anlagenadresse, DWD-Warngebiet und Warnlage sowie der aktuelle Zustand jedes WR mit bestätigtem Backup-SOC, Sollwert, Kategorie, letztem erfolgreichen Abgleich und nächster Intervallprüfung.
 - **Settings:** zentralen Standort setzen und Wechselrichter mit Verbindung, Kommunikationsprüfung und Abfrageintervall verwalten.
@@ -49,7 +52,7 @@ aktuell der angezeigte SOC ist. Das Intervall ist unabhängig von der DWD-Abfrag
 ### Nächster Schritt: DWD-Ereignisse
 
 Eine spätere Erweiterung kann zusätzlich zur Warnstufe bestimmte Ereignisarten
-auswählen lassen, beispielsweise Sturm, Schneefall und Glatteis. In V0.1.5
+auswählen lassen, beispielsweise Sturm, Schneefall und Glatteis. In V0.1.6
 entscheidet weiterhin ausschließlich die gültige Warnstufe 2–4 über die Warnreserve.
 
 **Die WR-Prüfung und das Speichern benötigen weder Wetterstandort noch
@@ -202,7 +205,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.5** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.6** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte

@@ -18,4 +18,3 @@ for attempt in range(45):
         time.sleep(1)
 else:
     raise RuntimeError("App container did not become healthy")
-

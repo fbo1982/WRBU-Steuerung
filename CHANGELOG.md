@@ -1,5 +1,13 @@
 # Änderungsprotokoll
 
+## V0.1.6
+
+- Kompaktere Oberfläche mit kleinerem Kopfbereich, kürzeren Abständen und breiter genutzter Desktopfläche.
+- Statuskarten und Standortanzeige benötigen deutlich weniger Höhe; die vier Statusfelder stehen am Desktop nebeneinander.
+- Standort- und WR-Verwaltung werden auf breiten Bildschirmen nebeneinander angeordnet.
+- Mobile Ansicht behält gut bedienbare Schaltflächen und einspaltige Formulare bei.
+- Keine Begrenzung oder Ausblendung von Warnmeldungen und Fehlern; längere Inhalte bleiben vollständig erreichbar.
+
 ## V0.1.5
 
 - Drei Reiter: Startseite mit Zustand und Standort, Settings mit Standort-/WR-Verwaltung und Kategorie mit Auswahl des WR.

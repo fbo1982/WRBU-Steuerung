@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.5
+# WRBU Steuerung · V0.1.6
 
 WR-Kommunikation ohne DWD-Sensor prüfen und speichern.
 **Startseite** zeigt Zustand und Standort. Unter **Settings** Standort und WR

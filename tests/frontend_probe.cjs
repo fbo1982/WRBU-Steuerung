@@ -34,7 +34,7 @@ async function setup(probeReply, pollReply, settings={}) {
   form.elements=Object.fromEntries(['name','profile','host','port','unit'].map(key=>[key,new Element()]));
   form.reportValidity=()=>{throw new Error('Do not validate unrelated hidden fields');};
   const calls=[];
-  const status={version:'0.1.5',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+  const status={version:'0.1.6',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
     profiles:{sungrow_sh:'Sungrow SH'},default_categories:[{name:'Alle',months:[1,2,3,4,5,6,7,8,9,10,11,12],normal_soc:25,warning_soc:60}]};
   let polls=0, savePayload=null;
   const existing={id:"existing",connection:{name:"Haus",profile:"sungrow_sh",host:"192.0.2.10",port:502,unit:1},
