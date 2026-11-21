@@ -5,6 +5,8 @@ from .events import LABELS, matches, validate_event_rules
 
 def validate_categories(categories: list[dict]) -> list[dict]:
     """Reject overlapping months, duplicate names and invalid SOC values."""
+    if not isinstance(categories, list):
+        raise ValueError("Kategorien müssen als Liste übergeben werden")
     result = deepcopy(categories)
     used = set()
     names = set()
@@ -13,8 +15,10 @@ def validate_categories(categories: list[dict]) -> list[dict]:
         months = category.get("months", [])
         if not name or name.casefold() in names:
             raise ValueError("Name fehlt oder ist bereits vergeben")
-        if not months or len(set(months)) != len(months):
-            raise ValueError("Mindestens einen eindeutigen Monat auswählen")
+        if not isinstance(months, list) or any(type(m) is not int for m in months):
+            raise ValueError("Monate müssen eine Liste ganzer Monatsnummern sein")
+        if len(set(months)) != len(months):
+            raise ValueError("Monate dürfen in einer Kategorie nicht doppelt vorkommen")
         if any(type(m) is not int or not 1 <= m <= 12 for m in months):
             raise ValueError("Ungültiger Monat")
         if used.intersection(months):
@@ -25,6 +29,10 @@ def validate_categories(categories: list[dict]) -> list[dict]:
                 raise ValueError("SOC muss eine ganze Zahl zwischen 0 und 100 sein")
         if category["warning_soc"] < category["normal_soc"]:
             raise ValueError("Die Warnreserve darf die normale Reserve nicht unterschreiten")
+        for key in ("normal_emergency_soc", "warning_emergency_soc"):
+            value = category.get(key)
+            if value is not None and (type(value) is not int or not 1 <= value <= 100):
+                raise ValueError("Notlade-Ziel-SOC muss eine ganze Zahl zwischen 1 und 100 sein oder leer bleiben.")
         if "event_rules" in category:
             category["event_rules"] = validate_event_rules(category["event_rules"], category["normal_soc"])
         category["name"] = name
@@ -35,12 +43,12 @@ def validate_categories(categories: list[dict]) -> list[dict]:
 
 
 def available_months(categories: list[dict], editing: int | None = None) -> list[int]:
-    """Already assigned months cannot even be selected in a second category."""
+    """Unassigned months for summaries; the UI can explicitly transfer others."""
     used = {m for i, c in enumerate(categories) if i != editing for m in c["months"]}
     return [m for m in range(1, 13) if m not in used]
 
 
-def decision_for(categories: list[dict], month: int, level: str | None, warnings=None):
+def _backup_decision(categories: list[dict], month: int, level: str | None, warnings=None):
     """Unknown weather or an unassigned month means hold current reserve."""
     if level not in ("0", "1", "2", "3", "4"):
         return {"desired": None, "category": None, "reason": "Wetterstandort/DWD-Daten fehlen oder sind veraltet."}
@@ -72,6 +80,31 @@ def decision_for(categories: list[dict], month: int, level: str | None, warnings
     desired = max(value for value, _ in contributions)
     reasons = list(dict.fromkeys(reason for value, reason in contributions if value == desired))
     return {"desired": desired, "category": category["name"], "reason": "; ".join(reasons[:3])}
+
+
+def decision_for(categories: list[dict], month: int, level: str | None, warnings=None):
+    result = _backup_decision(categories, month, level, warnings)
+    result["emergency_desired"] = None
+    if result["desired"] is None:
+        return result
+    category = next(c for c in categories if month in c["months"])
+    normal = category.get("normal_emergency_soc")
+    standard = category.get("warning_emergency_soc")
+    standard = normal if standard is None else standard
+    if not category.get("event_rules") or warnings is None:
+        result["emergency_desired"] = standard if int(level) >= 2 else normal
+        return result
+    values = []
+    for warning in warnings:
+        matching = [r.get("emergency_soc") for r in category["event_rules"]
+                    if matches(r, warning) and r.get("emergency_soc") is not None]
+        fallback = standard if warning["level"] >= 2 else normal
+        if matching:
+            values.append(max(matching))
+        elif fallback is not None:
+            values.append(fallback)
+    result["emergency_desired"] = max(values) if values else normal
+    return result
 
 
 def target_for(categories: list[dict], month: int, level: str | None, warnings=None):

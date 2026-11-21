@@ -85,6 +85,9 @@ legend { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
 .months { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .months label { flex-direction: row; align-items: center; background: white; border: 1px solid #d0dfe2; padding: 8px; border-radius: 6px; font-weight: 500; }
 .months input { width: auto; }
+.months small { display: block; font-size: 10px; color: #637983; margin-top: 2px; overflow-wrap: anywhere; }
+.months .assigned-month { border-style: dashed; }
+#month-transfer-message:empty { display: none; }
 .months label:has(input:disabled) { opacity: .38; }
 .months label:has(input:checked) { border-color: #087f74; background: #e9f6f1; }
 .overview { margin: 0 0 14px; border-top: 3px solid #087f74; }
@@ -108,6 +111,10 @@ footer { padding: 12px 0 0; color: #72858c; text-align: center; font-size: 11px;
 .event-settings { margin-top: 16px; border-top: 1px solid #dce6e8; padding-top: 12px; }
 .event-settings h3 { font-size: 15px; margin: 0; }
 .event-rule { display: grid; grid-template-columns: minmax(0, 2fr) minmax(100px, .6fr) minmax(110px, .6fr) auto; gap: 10px; align-items: end; margin-bottom: 10px; }
+.event-rule.with-emergency { grid-template-columns: minmax(0, 2fr) minmax(100px, .6fr) minmax(100px, .6fr) minmax(125px, .7fr) auto; }
+.check-label { flex-direction: row; align-items: center; margin-top: 12px; }
+.check-label input { width: auto; }
+#emergency-category-fields { margin-top: 12px; }
 @media (min-width: 1000px) {
   .card dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   #page-home > .section-title > div, .overview .section-title > div {
@@ -128,7 +135,7 @@ footer { padding: 12px 0 0; color: #72858c; text-align: center; font-size: 11px;
   .category-row { align-items: flex-start; flex-direction: column; }
   main { padding: 12px; }
   .panel, .card { padding: 14px; }
-  .event-rule { grid-template-columns: 1fr 1fr; }
+  .event-rule, .event-rule.with-emergency { grid-template-columns: 1fr 1fr; }
   .event-rule > label:first-child { grid-column: 1 / -1; }
   #weather-choice { align-items: stretch; flex-direction: column; }
   button, button.small { min-height: 40px; }

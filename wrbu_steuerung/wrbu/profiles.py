@@ -31,20 +31,42 @@ class TestResult:
     error: str = ""
     checked_at: str = ""
     stage: str = ""
+    emergency_before: int | None = None
+    emergency_after: int | None = None
+    emergency_write_attempted: bool = False
+    emergency_write_acknowledged: bool = False
 
     def as_dict(self):
         return asdict(self)
 
 
+class SettingsApplyError(ModbusError):
+    def __init__(self, message, report):
+        super().__init__(message)
+        self.report = report
+
+
+def emergency_verified(result):
+    return (result.get("success") is True and type(result.get("emergency_before")) is int
+            and 1 <= result["emergency_before"] <= 100
+            and result.get("emergency_after") == result["emergency_before"]
+            and result.get("emergency_write_acknowledged") is True)
+
+
 class BackupAdapter(Protocol):
     """Interface independent of manufacturer and Modbus register layout."""
     async def identify(self) -> tuple[str, str]: ...
-    async def probe(self) -> TestResult: ...
+    async def probe(self, *, include_emergency=False) -> TestResult: ...
     async def apply(self, value: int) -> tuple[int, bool]: ...
+    async def apply_targets(self, backup: int, emergency: int | None) -> dict: ...
 
 
 class SungrowSH:
     ADDRESS = 13099  # Documentation register 13100, U16, 1 %, FC03/06.
+    # WiNet installer parameter catalogue: doc 32618, U16, 1 %, range 1..100.
+    # Source: NickStallman/Rewired-S data/installer_rules.yaml (unit/res_es).
+    # Optional; access is enabled only after this endpoint passes a same-value probe.
+    EMERGENCY_ADDRESS = 32617
 
     def __init__(self, connection: dict, expected_serial: str | None = None,
                  session_factory=ModbusSession):
@@ -90,7 +112,13 @@ class SungrowSH:
             raise ModbusError(f"Ungültiger Backup-SOC: {value}")
         return value
 
-    async def probe(self) -> TestResult:
+    async def _read_emergency(self, session) -> int:
+        value = (await session.read(self.EMERGENCY_ADDRESS))[0]
+        if not 1 <= value <= 100:
+            raise ModbusError(f"Ungültiger Notlade-Ziel-SOC: {value}; erwartet 1–100 %")
+        return value
+
+    async def probe(self, *, include_emergency=False) -> TestResult:
         """Exactly one same-value write, no automatic write retry during setup."""
         result = TestResult(checked_at=datetime.now(timezone.utc).isoformat())
         try:
@@ -102,6 +130,10 @@ class SungrowSH:
                 result.stage = "read_soc"
                 self.progress("read_soc", "Aktueller Backup-SOC wird gelesen.")
                 result.before = await self._read_soc(session)
+                if include_emergency:
+                    result.stage = "read_emergency"
+                    self.progress(result.stage, "Notlade-Ziel-SOC wird gelesen (Register 32618).")
+                    result.emergency_before = await self._read_emergency(session)
                 result.stage = "write_soc"
                 self.progress("write_soc", f"Derselbe Backup-SOC ({result.before} %) wird einmal zurückgeschrieben.")
                 result.write_attempted = True
@@ -112,11 +144,58 @@ class SungrowSH:
                 result.after = await self._read_soc(session)
                 if result.after != result.before:
                     raise ModbusError("Rücklesewert weicht vom geschriebenen Wert ab")
+                if include_emergency:
+                    result.stage = "write_emergency"
+                    self.progress(result.stage, f"Derselbe Notlade-Ziel-SOC ({result.emergency_before} %) wird einmal zurückgeschrieben.")
+                    result.emergency_write_attempted = True
+                    await session.write(self.EMERGENCY_ADDRESS, result.emergency_before)
+                    result.emergency_write_acknowledged = True
+                    result.stage = "readback_emergency"
+                    self.progress(result.stage, "Notlade-Ziel-SOC wird zurückgelesen und verglichen.")
+                    result.emergency_after = await self._read_emergency(session)
+                    if result.emergency_after != result.emergency_before:
+                        raise ModbusError("Notlade-Ziel-SOC: Rücklesewert weicht vom geschriebenen Wert ab")
                 result.success = True
                 result.stage = "complete"
         except ModbusError as err:
             result.error = str(err)
         return result
+
+    async def apply_targets(self, backup: int, emergency: int | None) -> dict:
+        if type(backup) is not int or not 0 <= backup <= 100:
+            raise ValueError("Backup-SOC muss zwischen 0 und 100 liegen")
+        if emergency is not None and (type(emergency) is not int or not 1 <= emergency <= 100):
+            raise ValueError("Notlade-Ziel-SOC muss zwischen 1 und 100 liegen")
+        report = {"current": None, "emergency_current": None,
+                  "backup_written": False, "emergency_written": False}
+        try:
+            async with self.session() as session:
+                await self._identify(session)
+                # Read both before any write: an unavailable second parameter
+                # must not cause a half-applied change before it is discovered.
+                self.progress("read_soc", "Backup-SOC wird für den Abgleich gelesen.")
+                report["current"] = await self._read_soc(session)
+                self.progress("read_emergency", "Notlade-Ziel-SOC wird für den Abgleich gelesen.")
+                report["emergency_current"] = await self._read_emergency(session)
+                for address, key, written_key, target, reader, stage, title in (
+                    (self.ADDRESS, "current", "backup_written", backup, self._read_soc, "soc", "Backup-SOC"),
+                    (self.EMERGENCY_ADDRESS, "emergency_current", "emergency_written", emergency, self._read_emergency, "emergency", "Notlade-Ziel-SOC"),
+                ):
+                    if target is None or report[key] == target:
+                        continue
+                    self.progress("write_"+stage, f"{title} wird auf {target} % gesetzt.")
+                    # After a timeout the old value is no longer a confirmation.
+                    report[key] = None
+                    await session.write(address, target)
+                    self.progress("readback_"+stage, f"{title} wird zurückgelesen und bestätigt.")
+                    actual = await reader(session)
+                    report[key] = actual
+                    if actual != target:
+                        raise ModbusError(f"{title}: erwartet {target} %, zurückgelesen {actual} %")
+                    report[written_key] = True
+            return report
+        except ModbusError as err:
+            raise SettingsApplyError(str(err), report) from err
 
     async def apply(self, value: int) -> tuple[int, bool]:
         if type(value) is not int or not 0 <= value <= 100:

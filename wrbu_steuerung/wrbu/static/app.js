@@ -7,10 +7,12 @@ let saving = false, lockedControls = [], proofSignature = null;
 let editorEpoch = 0, proofReason = "Bitte zuerst die Kommunikation erfolgreich prüfen.";
 let currentView = "home", draftBaseline = "", pickerSignature = "";
 let categoryEventRules = [];
+let monthTransfers = new Map();
 const form = $("device-form");
 function draftSignature() {
-  return draft?JSON.stringify({connection:connection(),categories:draft.categories,interval:$("check-interval").value}):"";
+  return draft?JSON.stringify({connection:connection(),categories:draft.categories,interval:$("check-interval").value,manage_emergency:$("manage-emergency").checked}):"";
 }
+function verificationSignature(){return JSON.stringify({connection:connection(),verify_emergency:$("manage-emergency").checked});}
 function mayLeaveDraft() {
   return !draft || (draftSignature()===draftBaseline && $("category-editor").hidden) ||
     confirm("Nicht gespeicherte Änderungen verwerfen?");
@@ -93,10 +95,11 @@ function invalidateProof(reason) {
 function unchangedSavedConnection() {
   if(!draft?.id)return false;
   const current=connection();
-  return ["profile","host","port","unit"].every(key=>current[key]===draft.connection[key]);
+  return ["profile","host","port","unit"].every(key=>current[key]===draft.connection[key])&&
+    (!$("manage-emergency").checked||draft.manage_emergency_soc===true);
 }
 function verifiedConnection() {
-  return Boolean(proof&&proofSignature===JSON.stringify(connection()));
+  return Boolean(proof&&proofSignature===verificationSignature());
 }
 function buttons() {
   const verified=verifiedConnection(), reuse=unchangedSavedConnection();
@@ -137,7 +140,7 @@ function validConnection() {
   }
   return ["name","profile","host","port","unit"].every(key=>form.elements[key].reportValidity());
 }
-const probeStages={save_config:"Einstellungen speichern",queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Denselben SOC einmal schreiben",readback:"SOC zurücklesen und vergleichen",complete:"Abgeschlossen"};
+const probeStages={save_config:"Einstellungen speichern",queued:"Warten auf freie Kommunikation",connect:"Verbindung aufbauen",model:"WR-Modell lesen",serial:"Seriennummer lesen",identity:"Geräteidentität prüfen",read_soc:"Backup-SOC lesen",write_soc:"Backup-SOC schreiben",readback:"SOC zurücklesen und vergleichen",readback_soc:"Backup-SOC zurücklesen",read_emergency:"Notlade-Ziel-SOC lesen",write_emergency:"Notlade-Ziel-SOC schreiben",readback_emergency:"Notlade-Ziel-SOC zurücklesen",complete:"Abgeschlossen"};
 function showProbe(text, failed=false) {
   $("test-result").className="result"+(failed?" failed":"");
   $("test-result").hidden=false;
@@ -164,6 +167,8 @@ function showProbeReport(job, target) {
     "\nBackup-SOC gelesen: "+(r.before??"–")+" %"+
     "\nSchreiben versucht: "+(r.write_attempted?"ja":"nein")+" · Schreibbestätigung: "+(r.write_acknowledged?"ja":"nein")+
     "\nZurückgelesen: "+(r.after??"–")+" %"+
+    ($("manage-emergency").checked?"\nNotlade-Ziel-SOC gelesen: "+(r.emergency_before??"–")+" % · zurückgelesen: "+(r.emergency_after??"–")+" %"+
+      "\nNotlade-Ziel-SOC: Schreiben versucht: "+(r.emergency_write_attempted?"ja":"nein")+" · Schreibbestätigung: "+(r.emergency_write_acknowledged?"ja":"nein"):"")+
     (success?"\nDu kannst den Wechselrichter jetzt speichern.":"\nSpeichern bleibt gesperrt. Bitte den angezeigten Grund prüfen."),!success);
 }
 function openEditor(device=null, view="settings") {
@@ -177,6 +182,8 @@ function openEditor(device=null, view="settings") {
   }));
   for (const [key,value] of Object.entries(draft.connection)) if(form.elements[key]) form.elements[key].value=value;
   $("check-interval").value=draft.check_interval_minutes??0;
+  $("manage-emergency").checked=draft.manage_emergency_soc===true;
+  $("emergency-category-fields").hidden=!$("manage-emergency").checked;
   draftBaseline=draftSignature();
   currentView=view;
   updateConnectionHint();
@@ -197,6 +204,7 @@ function renderDevices() {
       const block=element("div"); block.append(element("dt",name),element("dd",String(value)));dl.append(block);
     }
     card.append(dl);
+    if(device.manage_emergency_soc)card.append(element("p","Notlade-Ziel-SOC: "+(runtime.emergency_current??"–")+" % · Soll: "+(runtime.emergency_desired??"unverändert"),"muted"));
     if(runtime.last_verified) card.append(element("p","Zuletzt vom WR bestätigt: "+new Date(runtime.last_verified).toLocaleString("de-DE"),"muted"));
     if(runtime.error) card.append(element("p",runtime.error,"error"));
     if(runtime.reason&&device.categories.some(c=>c.name===runtime.category&&c.event_rules?.length))card.append(element("p","Gültige Regel: "+runtime.reason,"muted"));
@@ -227,7 +235,7 @@ function renderCategories() {
   const list=$("categories");list.hidden=false;$("free-months").hidden=false;list.replaceChildren();
   draft.categories.forEach((category,index)=>{
     const row=element("div",undefined,"category-row"), details=element("div");
-    details.append(element("strong",category.name),element("p",category.months.map(m=>months[m-1]).join(", ")+" · Normal "+category.normal_soc+" % · DWD-Standard "+category.warning_soc+" % · "+(category.event_rules?.length||0)+" Ereignisregeln"));
+    details.append(element("strong",category.name),element("p",(category.months.length?category.months.map(m=>months[m-1]).join(", "):"Ohne Monate · inaktive Vorlage")+" · Normal "+category.normal_soc+" % · DWD-Standard "+category.warning_soc+" % · "+(category.event_rules?.length||0)+" Ereignisregeln"));
     const actions=element("div",undefined,"actions");
     const edit=element("button","Bearbeiten","secondary small");edit.type="button";edit.onclick=()=>openCategory(index);
     const remove=element("button","Löschen","danger small");remove.type="button";remove.onclick=()=>{
@@ -237,7 +245,7 @@ function renderCategories() {
   });
   const used=new Set(draft.categories.flatMap(c=>c.months)),free=months.filter((_,i)=>!used.has(i+1));
   $("free-months").textContent=free.length?"Ohne Regel: "+free.join(", ")+". In diesen Monaten wird auch bei DWD-Warnungen kein SOC gesetzt.":"Alle zwölf Monate sind zugeordnet.";
-  $("add-category").disabled=used.size===12;
+  $("add-category").disabled=saving;
   buttons();
 }
 function openCategory(index=null) {
@@ -245,12 +253,32 @@ function openCategory(index=null) {
   $("save-result").hidden=true;
   $("categories").hidden=true;$("free-months").hidden=true;$("add-category").disabled=true;
   editingCategory=index;
+  monthTransfers=new Map();
+  $("month-transfer-message").textContent="";
   const category=index===null?{name:"",months:[],normal_soc:25,warning_soc:60}:draft.categories[index];
   $("category-name").value=category.name;$("normal-soc").value=category.normal_soc;$("warning-soc").value=category.warning_soc;
+  $("normal-emergency-soc").value=category.normal_emergency_soc??"";
+  $("warning-emergency-soc").value=category.warning_emergency_soc??"";
+  $("emergency-category-fields").hidden=!$("manage-emergency").checked;
   categoryEventRules=structuredClone(category.event_rules||[]);renderEventRules();
-  const used=new Set(draft.categories.flatMap((c,i)=>i===index?[]:c.months));
   const list=$("months");list.replaceChildren();
-  months.forEach((name,i)=>{const label=element("label"),input=element("input");input.type="checkbox";input.value=String(i+1);input.checked=category.months.includes(i+1);input.disabled=used.has(i+1);label.append(input,document.createTextNode(name));list.append(label);});
+  months.forEach((name,i)=>{
+    const month=i+1,owner=draft.categories.findIndex((c,position)=>position!==index&&c.months.includes(month));
+    const label=element("label"),input=element("input"),text=element("span",name);
+    input.type="checkbox";input.value=String(month);input.checked=category.months.includes(month);
+    if(owner>=0){text.append(element("small","Bisher: "+draft.categories[owner].name));label.className="assigned-month";}
+    input.onchange=()=>{
+      if(input.checked&&owner>=0){
+        const target=$("category-name").value.trim()||"diese Kategorie";
+        if(!confirm(name+" ist bereits „"+draft.categories[owner].name+"“ zugeordnet. Beim Übernehmen nach „"+target+"“ verschieben und aus der bisherigen Kategorie entfernen?")){
+          input.checked=false;return;
+        }
+        monthTransfers.set(month,owner);
+      }else monthTransfers.delete(month);
+      $("month-transfer-message").textContent=monthTransfers.size?"Beim Übernehmen werden verschoben: "+[...monthTransfers].map(([m,source])=>months[m-1]+" aus „"+draft.categories[source].name+"“").join(", ")+". Dauerhaft speichern anschließend unten.":"";
+    };
+    label.append(input,text);list.append(label);
+  });
   $("category-editor").hidden=false;buttons();
 }
 function renderEventRules(){
@@ -276,7 +304,16 @@ function renderEventRules(){
     soc.oninput=()=>{rule.soc=soc.value===""?null:Number(soc.value);};socLabel.append(soc);
     const remove=element("button","Entfernen","danger small");remove.type="button";
     remove.onclick=()=>{categoryEventRules.splice(index,1);renderEventRules();};
-    row.append(eventLabel,levelLabel,socLabel,remove);list.append(row);
+    row.append(eventLabel,levelLabel,socLabel);
+    if($("manage-emergency").checked){
+      row.className+=" with-emergency";
+      const emergencyLabel=element("label","Notlade-Ziel-SOC (%)"),emergency=element("input");
+      emergency.type="number";emergency.min="1";emergency.max="100";emergency.step="1";
+      emergency.placeholder="Standard";emergency.value=rule.emergency_soc??"";
+      emergency.oninput=()=>{rule.emergency_soc=emergency.value===""?null:Number(emergency.value);};
+      emergencyLabel.append(emergency);row.append(emergencyLabel);
+    }
+    row.append(remove);list.append(row);
   });
   $("add-event-rule").disabled=categoryEventRules.length>=32||!catalog.length;
 }
@@ -291,17 +328,28 @@ $("add-event-rule").onclick=()=>{
 $("apply-category").onclick=()=>{
   const category={name:$("category-name").value.trim(),months:[...$("months").querySelectorAll("input:checked")].map(input=>Number(input.value)),
     normal_soc:Number($("normal-soc").value),warning_soc:Number($("warning-soc").value)};
-  if(!category.name||!category.months.length) {notice("Bitte Kategorienamen und mindestens einen Monat auswählen.");return;}
+  if(!category.name) {notice("Bitte einen Kategorienamen eingeben. Kategorien ohne Monate bleiben als inaktive Vorlage erhalten.");return;}
   if(!Number.isInteger(category.normal_soc)||!Number.isInteger(category.warning_soc)||category.normal_soc<0||category.warning_soc>100||category.warning_soc<category.normal_soc) {notice("Bitte ganze SOC-Werte von 0 bis 100 eingeben. Die Warnreserve darf nicht niedriger sein.");return;}
   if(draft.categories.some((c,i)=>i!==editingCategory&&c.name.toLocaleLowerCase()===category.name.toLocaleLowerCase())) {notice("Dieser Kategoriename ist bereits vergeben.");return;}
   const usedRules=new Set();
+  for(const [key,id] of [["normal_emergency_soc","normal-emergency-soc"],["warning_emergency_soc","warning-emergency-soc"]]){
+    const raw=$(id).value,value=raw===""?null:Number(raw);
+    if(value!==null&&(!Number.isInteger(value)||value<1||value>100)){notice("Notlade-Ziel-SOC: ganze Werte zwischen 1 und 100 eingeben oder das Feld leer lassen.");return;}
+    category[key]=value;
+  }
   for(const rule of categoryEventRules){
     const key=rule.event+":"+rule.min_level;
     if(!(state.event_catalog||[]).some(item=>item.id===rule.event)||!Number.isInteger(rule.min_level)||rule.min_level<1||rule.min_level>4||!Number.isInteger(rule.soc)||rule.soc<category.normal_soc||rule.soc>100){notice("Ereignisregeln: gültiges Ereignis, Stufe 1–4 und ganzen SOC zwischen normaler Monatsreserve und 100 % eingeben.");return;}
     if(usedRules.has(key)){notice("Dieses Ereignis mit dieser Mindestwarnstufe ist bereits vorhanden.");return;}
+    if(rule.emergency_soc!==undefined&&rule.emergency_soc!==null&&(!Number.isInteger(rule.emergency_soc)||rule.emergency_soc<1||rule.emergency_soc>100)){notice("Notlade-Ziel-SOC in Ereignisregeln: ganze Werte zwischen 1 und 100 eingeben oder leer lassen.");return;}
     usedRules.add(key);
   }
   category.event_rules=structuredClone(categoryEventRules);
+  for(const month of category.months){
+    const source=draft.categories.findIndex((c,i)=>i!==editingCategory&&c.months.includes(month));
+    if(source>=0&&monthTransfers.get(month)!==source){notice("Die Monatszuordnung wurde geändert. Bitte den Monat erneut auswählen und die Übernahme bestätigen.");return;}
+  }
+  draft.categories.forEach((c,i)=>{if(i!==editingCategory)c.months=c.months.filter(month=>!category.months.includes(month));});
   if(editingCategory===null)draft.categories.push(category);else draft.categories[editingCategory]=category;
   $("category-editor").hidden=true;notice();renderCategories();categoryDraftChanged();
 };
@@ -311,14 +359,19 @@ $("add-device").onclick=()=>state&&openEditor();
 $("close-editor").onclick=()=>{if(saving||checking||!mayLeaveDraft())return;editorEpoch++;draft=null;invalidateProof("Bitte zuerst die Kommunikation erfolgreich prüfen.");$("test-result").hidden=true;notice();syncView();};
 for(const key of ["name","profile","host","port","unit"])form.elements[key].addEventListener("input",invalidateProof);
 form.elements.profile.addEventListener("change",updateConnectionHint);
+$("manage-emergency").onchange=()=>{
+  invalidateProof("Geänderter Prüfumfang. Bitte Backup-SOC und Notlade-Ziel-SOC gemeinsam prüfen.");
+  $("emergency-category-fields").hidden=!$("manage-emergency").checked;
+  if(!$("category-editor").hidden)renderEventRules();
+};
 $("test-device").onclick=async()=>{
   if(!validConnection()||checking||saving)return;
-  const epoch=editorEpoch, target=connection(), submitted=JSON.stringify(target), id=draft.id;
+  const epoch=editorEpoch, target=connection(), submitted=verificationSignature(), id=draft.id,verifyEmergency=$("manage-emergency").checked;
   checking=true;invalidateProof("Prüfung läuft.");$("test-device").disabled=true;$("test-device").textContent="Prüfung läuft …";notice();
   showProbe("Prüfung wird gestartet …\n"+probeTarget(target)+"\nEs wird kein Wert verändert: Der gelesene Backup-SOC wird einmal identisch zurückgeschrieben.");
   $("test-result").scrollIntoView({behavior:"smooth",block:"nearest"});
   try {
-    let job=await api("api/probes",{method:"POST",body:JSON.stringify({id,connection:target})});
+    let job=await api("api/probes",{method:"POST",body:JSON.stringify({id,connection:target,verify_emergency:verifyEmergency})});
     const started=Date.now();
     while(job.state==="queued"||job.state==="running"){
       if(epoch!==editorEpoch||!draft)return;
@@ -328,7 +381,7 @@ $("test-device").onclick=async()=>{
       job=await api("api/probes/"+encodeURIComponent(job.id));
     }
     if(epoch!==editorEpoch||!draft)return;
-    if(draft.id!==id||JSON.stringify(connection())!==submitted)throw new Error("Verbindungsdaten während der Prüfung geändert. Dieses Ergebnis erlaubt kein Speichern; bitte die neuen Daten prüfen.");
+    if(draft.id!==id||verificationSignature()!==submitted)throw new Error("Verbindungsdaten während der Prüfung geändert. Dieses Ergebnis erlaubt kein Speichern; bitte die neuen Daten prüfen.");
     showProbeReport(job,target);
     if(job.state==="complete"&&job.result?.success&&job.proof){
       proof=job.proof;proofSignature=submitted;proofReason="Prüfung erfolgreich.";
@@ -355,7 +408,7 @@ form.onsubmit=async event=>{
   }
   const interval=Number($("check-interval").value);
   if(!Number.isInteger(interval)||interval<0||interval>1440){notice("Abfrageintervall: 0 (Aus) oder 1 bis 1440 ganze Minuten eingeben.");showView("settings");return;}
-  const payload={id:draft.id,connection:connection(),categories:structuredClone(draft.categories),check_interval_minutes:interval,proof:verifiedConnection()?proof:null};
+  const payload={id:draft.id,connection:connection(),categories:structuredClone(draft.categories),check_interval_minutes:interval,manage_emergency_soc:$("manage-emergency").checked,proof:verifiedConnection()?proof:null};
   saving=true;lockEditor(true);buttons();notice();
   $("save-device").textContent="Speichern läuft …";
   showSave("Einstellungen werden gespeichert. Der aktuell gültige SOC wird anhand von Monat und DWD-Lage ermittelt und am WR geprüft.");
@@ -373,6 +426,7 @@ form.onsubmit=async event=>{
     const device=job.result, result=device.save_result;
     draft=structuredClone(device);
     $("check-interval").value=device.check_interval_minutes??interval;
+    $("manage-emergency").checked=device.manage_emergency_soc===true;
     for(const [key,value] of Object.entries(draft.connection))if(form.elements[key])form.elements[key].value=value;
     draftBaseline=draftSignature();
     proof=null;proofSignature=null;clearTimeout(proofTimer);
@@ -380,6 +434,7 @@ form.onsubmit=async event=>{
     const details="\nKategorie: "+(result.category||"–")+" · DWD-Stufe: "+(result.warning_level??"unbekannt")+
       (result.reason?"\nGültige Regel: "+result.reason:"")+
       "\nAktuell gültiger Sollwert: "+(result.desired??"–")+" % · Bestätigter Backup-SOC: "+(result.current??"–")+" %"+
+      (device.manage_emergency_soc?"\nNotlade-Ziel-SOC: "+(result.emergency_current??"–")+" % · Soll: "+(result.emergency_desired??"unverändert"):"")+
       (result.checked_at?"\nStand des Speicherabgleichs: "+new Date(result.checked_at).toLocaleString("de-DE"):"");
     showSave(result.message+details,false,!result.applied);
     await refresh();

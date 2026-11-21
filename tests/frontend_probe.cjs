@@ -34,7 +34,7 @@ async function setup(probeReply, pollReply, settings={}) {
   form.elements=Object.fromEntries(['name','profile','host','port','unit'].map(key=>[key,new Element()]));
   form.reportValidity=()=>{throw new Error('Do not validate unrelated hidden fields');};
   const calls=[];
-  const status={version:'0.1.7',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
+  const status={version:'0.1.8',ha_ready:false,ha_error:'',timezone:'Europe/Berlin',weather:null,devices:[],
     event_catalog:[{id:'group:WIND',label:'Wind / Sturm',kind:'group'},{id:'ii:55',label:'Orkanböen',kind:'event'}],
     profiles:{sungrow_sh:'Sungrow SH'},default_categories:[{name:'Alle',months:[1,2,3,4,5,6,7,8,9,10,11,12],normal_soc:25,warning_soc:60}]};
   let polls=0, savePayload=null;
@@ -44,7 +44,7 @@ async function setup(probeReply, pollReply, settings={}) {
   if(settings.existing)status.devices=[existing];
   const context=vm.createContext({
     document:{getElementById:get,createElement:()=>new Element(),createTextNode:text=>({textContent:text}),activeElement:null},
-    AbortController,structuredClone,Date,console,confirm:()=>true,
+    AbortController,structuredClone,Date,console,confirm:settings.confirm||(()=>true),
     setTimeout:(callback,delay)=>{if(delay===700)setImmediate(callback);return 1;},clearTimeout:()=>{},
     fetch:async (url,options={})=>{
       calls.push({url,options});
@@ -57,7 +57,7 @@ async function setup(probeReply, pollReply, settings={}) {
       }
       if(url==='api/saves/save1')return {ok:true,status:200,json:async()=>({
         id:'save1',state:'complete',stage:'complete',result:{
-          ...existing,id:savePayload.id||'saved',connection:savePayload.connection,categories:savePayload.categories,check_interval_minutes:savePayload.check_interval_minutes,
+          ...existing,id:savePayload.id||'saved',connection:savePayload.connection,categories:savePayload.categories,check_interval_minutes:savePayload.check_interval_minutes,manage_emergency_soc:savePayload.manage_emergency_soc,
           save_result:{saved:true,applied:!settings.savePaused,outcome:settings.savePaused?'paused':'written',
             message:settings.savePaused?'Einstellungen gespeichert. SOC-Abgleich pausiert.':'Einstellungen gespeichert. Backup-SOC auf 25 % gesetzt und zurückgelesen.',
             category:'Alle',desired:settings.savePaused?null:25,current:25,warning_level:settings.savePaused?null:'0'}
@@ -276,4 +276,93 @@ test('event rules can be removed before adopting the category',async()=>{
   await ui.form.onsubmit({preventDefault(){}});
   const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
   assert.deepEqual(payload.categories[0].event_rules,[]);
+});
+
+test('additional categories can be saved even when all months already belong to a category',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  assert.equal(ui.get('add-category').disabled,false);
+  for(let i=0;i<20;i++){
+    ui.get('add-category').onclick();
+    ui.get('category-name').value='Vorlage '+i;
+    ui.get('apply-category').onclick();
+    assert.equal(ui.get('category-editor').hidden,true);
+  }
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.categories.length,21);
+  assert.deepEqual(payload.categories[20].months,[]);
+});
+
+test('accepting a month transfer moves it only after adopting the category',async()=>{
+  const prompts=[];
+  const ui=await setup(queued,success,{existing:true,confirm:message=>{prompts.push(message);return true;}});
+  ui.get('add-category').onclick();ui.get('category-name').value='Neue Kategorie';
+  const january=ui.get('months').children[0].children[0];
+  assert.equal(january.disabled,false);
+  january.checked=true;january.onchange();
+  assert.match(prompts[0],/Januar.*Alle.*Neue Kategorie/);
+  assert.equal(vm.runInContext('draft.categories[0].months.length',ui.context),12);
+  ui.get('apply-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.categories[0].months.includes(1),false);
+  assert.deepEqual(payload.categories[1].months,[1]);
+});
+
+test('declining or discarding a transfer preserves the old month owner',async()=>{
+  for(const accept of [false,true]){
+    const ui=await setup(queued,success,{existing:true,confirm:()=>accept});
+    ui.get('add-category').onclick();
+    const january=ui.get('months').children[0].children[0];january.checked=true;january.onchange();
+    assert.equal(january.checked,accept);
+    ui.get('cancel-category').onclick();
+    await ui.form.onsubmit({preventDefault(){}});
+    const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+    assert.equal(payload.categories.length,1);
+    assert.equal(payload.categories[0].months.length,12);
+  }
+});
+
+test('transferring every month retains the previous category as an inactive template',async()=>{
+  const ui=await setup(queued,success,{existing:true});
+  ui.get('add-category').onclick();ui.get('category-name').value='Alle neu';
+  for(const label of ui.get('months').children){const input=label.children[0];input.checked=true;input.onchange();}
+  ui.get('apply-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.categories.length,2);
+  assert.deepEqual(payload.categories[0].months,[]);
+  assert.equal(payload.categories[1].months.length,12);
+});
+
+test('enabling emergency management requires a new probe with the expanded scope',async()=>{
+  const dualSuccess=()=>reply({id:'job1',state:'complete',stage:'complete',proof:'dual-proof',result:{
+    success:true,before:25,after:25,model:'SH25T',serial:'SN001',emergency_before:20,emergency_after:20,
+    emergency_write_attempted:true,emergency_write_acknowledged:true}});
+  const ui=await setup(queued,dualSuccess,{existing:true});
+  ui.get('manage-emergency').checked=true;ui.get('manage-emergency').onchange();
+  assert.equal(ui.get('save-device').disabled,true);
+  await ui.get('test-device').onclick();
+  assert.equal(ui.get('save-device').disabled,false);
+  assert.match(ui.get('test-result').textContent,/Notlade-Ziel-SOC gelesen: 20/);
+  const probe=JSON.parse(ui.calls.find(call=>call.url==='api/probes').options.body);
+  assert.equal(probe.verify_emergency,true);
+  vm.runInContext('openCategory(0)',ui.context);
+  ui.get('normal-emergency-soc').value='20';ui.get('warning-emergency-soc').value='40';
+  ui.get('apply-category').onclick();
+  await ui.form.onsubmit({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(call=>call.url==='api/saves').options.body);
+  assert.equal(payload.manage_emergency_soc,true);
+  assert.equal(payload.categories[0].normal_emergency_soc,20);
+  assert.equal(payload.categories[0].warning_emergency_soc,40);
+});
+
+test('failed emergency probe can be disabled to continue with the stored backup connection',async()=>{
+  const ui=await setup(queued,()=>reply({state:'failed',stage:'read_emergency',proof:null,result:{success:false,error:'Illegal data address'}}),{existing:true});
+  ui.get('manage-emergency').checked=true;ui.get('manage-emergency').onchange();
+  await ui.get('test-device').onclick();
+  assert.equal(ui.get('save-device').disabled,true);
+  assert.match(ui.get('test-result').textContent,/Illegal data address/);
+  ui.get('manage-emergency').checked=false;ui.get('manage-emergency').onchange();
+  assert.equal(ui.get('save-device').disabled,false);
 });

@@ -11,7 +11,7 @@ import secrets
 import time
 
 from .policy import validate_categories, decision_for
-from .profiles import TestResult, create_adapter
+from .profiles import TestResult, create_adapter, emergency_verified
 from .modbus import ModbusError
 
 LOGGER = logging.getLogger(__name__)
@@ -29,6 +29,12 @@ DEFAULT_CATEGORIES = [
 def validate_interval(value):
     if type(value) is not int or not 0 <= value <= 1440:
         raise ValueError("Abfrageintervall: 0 (Aus) oder 1 bis 1440 ganze Minuten eingeben.")
+    return value
+
+
+def validate_flag(value):
+    if type(value) is not bool:
+        raise ValueError("Die Notlade-SOC-Verwaltung muss aktiviert oder deaktiviert sein.")
     return value
 
 
@@ -70,6 +76,9 @@ class Store:
             # V0.1.0 stored the DWD sensor on the inverter. Weather is now global.
             device["connection"] = normalize_connection(device["connection"])
             device["check_interval_minutes"] = validate_interval(device.get("check_interval_minutes", 0))
+            device["manage_emergency_soc"] = validate_flag(device.get("manage_emergency_soc", False))
+            if device["manage_emergency_soc"] and not emergency_verified(device["test_result"]):
+                raise ValueError("Die gespeicherte Notlade-SOC-Prüfung fehlt oder ist ungültig.")
             device["categories"] = validate_categories(device["categories"])
             if not device["categories"]:
                 raise ValueError("Ein gespeichertes Gerät hat keine Kategorien.")
@@ -124,6 +133,7 @@ class Manager:
         progress = progress or (lambda stage, message: None)
         connection = normalize_connection(data["connection"])
         editing = data.get("id")
+        verify_emergency = validate_flag(data.get("verify_emergency", False))
         if editing is not None and editing not in self.devices:
             raise ValueError("Dieses Gerät existiert nicht mehr.")
         async with self._lock:
@@ -141,15 +151,18 @@ class Manager:
             if hasattr(adapter, "set_progress"):
                 adapter.set_progress(progress)
             progress("read_soc", "Backup-SOC-Prüfung wird ausgeführt.")
-            result = await adapter.probe()
+            result = await adapter.probe(include_emergency=True) if verify_emergency else await adapter.probe()
             report = result.as_dict()
+            if verify_emergency and result.success and not emergency_verified(report):
+                report.update(success=False, error="Notlade-Ziel-SOC wurde nicht vollständig verifiziert.", stage="readback_emergency")
             proof = None
-            if result.success:
+            if report["success"]:
                 # Bound to normalized connection and edit identity, never supplied by the browser.
                 proof = secrets.token_urlsafe(32)
                 self._proofs[proof] = {
                     "expires": time.monotonic() + 600, "connection": connection,
                     "id": editing, "result": report, "serial": serial, "model": model,
+                    "verify_emergency": verify_emergency,
                 }
             return {"result": report, "proof": proof}
 
@@ -157,16 +170,18 @@ class Manager:
         """Return immediately. Polling reads job memory and never repeats writes."""
         connection = normalize_connection(data["connection"])
         editing = data.get("id")
+        verify_emergency = validate_flag(data.get("verify_emergency", False))
         now = time.monotonic()
         self._probe_jobs = {key: job for key, job in self._probe_jobs.items()
                             if job["state"] in ("queued", "running") or now-job["created"] < 600}
         for identity, job in self._probe_jobs.items():
-            if job["state"] in ("queued", "running") and job["connection"] == connection and job["editing"] == editing:
+            if job["state"] in ("queued", "running") and job["connection"] == connection and job["editing"] == editing and job["verify_emergency"] == verify_emergency:
                 return self.probe_status(identity)
         if len(self._probe_jobs) >= 64:
             raise ValueError("Zu viele Prüfaufträge. Bitte laufende Prüfungen abwarten.")
         identity = secrets.token_urlsafe(24)
         job = {"id": identity, "connection": connection, "editing": editing,
+               "verify_emergency": verify_emergency,
                "created": now, "state": "queued", "stage": "queued",
                "message": "Prüfung wartet auf freie Kommunikation.", "result": None, "proof": None}
         self._probe_jobs[identity] = job
@@ -176,7 +191,7 @@ class Manager:
 
         async def run():
             try:
-                report = await self.probe({"connection": connection, "id": editing}, progress)
+                report = await self.probe({"connection": connection, "id": editing, "verify_emergency": verify_emergency}, progress)
                 job.update(report)
                 success = report["result"]["success"]
                 job.update(state="complete" if success else "failed",
@@ -220,15 +235,21 @@ class Manager:
                 raise ValueError("Das Gerät wurde inzwischen gelöscht.")
             interval = validate_interval(data.get("check_interval_minutes",
                 existing.get("check_interval_minutes", 0) if existing else 0))
+            manage_emergency = validate_flag(data.get("manage_emergency_soc",
+                existing.get("manage_emergency_soc", False) if existing else False))
             endpoint_keys = ("profile", "host", "port", "unit")
             unchanged = existing is not None and all(
                 connection[key] == existing["connection"][key] for key in endpoint_keys)
             proof = self._proofs.get(data.get("proof", ""))
             valid_proof = (proof is not None and proof["expires"] >= time.monotonic()
                            and proof["connection"] == connection and proof["id"] == identity)
-            if not unchanged and not valid_proof:
+            sufficient_proof = valid_proof and (not manage_emergency or proof.get("verify_emergency") and emergency_verified(proof["result"]))
+            reusable = unchanged and (not manage_emergency or existing.get("manage_emergency_soc") and emergency_verified(existing["test_result"]))
+            if not reusable and not sufficient_proof:
+                if manage_emergency:
+                    raise ValueError("Backup-SOC und Notlade-Ziel-SOC bitte zuerst gemeinsam erfolgreich prüfen.")
                 raise ValueError("Neue oder geänderte WR-Verbindungsdaten bitte zuerst erfolgreich prüfen.")
-            if valid_proof:
+            if sufficient_proof:
                 serial, model, test_result = proof["serial"], proof["model"], proof["result"]
             else:
                 serial, model, test_result = existing["serial"], existing["model"], existing["test_result"]
@@ -239,13 +260,14 @@ class Manager:
                 raise ValueError("Dieser Wechselrichter ist bereits angelegt.")
             device = {"id": identity, "connection": connection, "categories": categories,
                       "check_interval_minutes": interval,
+                      "manage_emergency_soc": manage_emergency,
                       "serial": serial, "model": model, "test_result": test_result}
             candidate = deepcopy(self.devices)
             candidate[identity] = device
             progress("save_config", "Kategorien und Einstellungen werden dauerhaft gespeichert.")
             await asyncio.to_thread(self.store.write, candidate)
             self.devices = candidate
-            if valid_proof:
+            if sufficient_proof:
                 self._proofs.pop(data["proof"], None)
             self._cancel_retry(identity)
             self._cancel_check(identity)
@@ -253,8 +275,10 @@ class Manager:
             self._pending.discard(identity)
             state = self.runtime.setdefault(identity, {})
             state["status"] = "gespeichert"
-            if valid_proof:
+            if sufficient_proof:
                 state["current"] = proof["result"]["after"]
+                if manage_emergency:
+                    state["emergency_current"] = proof["result"]["emergency_after"]
             # A save is an explicit reconciliation event, even if the target is
             # unchanged: detect manual drift by reading the real inverter.
             await self._evaluate_locked(identity, force=True, progress=progress)
@@ -268,6 +292,12 @@ class Manager:
                 message = (f"Einstellungen gespeichert. Backup-SOC auf {state['current']} % gesetzt und zurückgelesen."
                            if outcome == "written" else
                            f"Einstellungen gespeichert. Backup-SOC am WR ist bereits korrekt: {state['current']} %. Kein Schreiben nötig.")
+                if manage_emergency:
+                    message = (f"Einstellungen gespeichert. Backup-SOC {state['current']} % und Notlade-Ziel-SOC {state.get('emergency_current')} % am WR bestätigt. "
+                               + ("Abweichende Werte wurden geschrieben und zurückgelesen." if outcome == "written" else "Beide Werte bereits korrekt; kein Schreiben nötig."))
+                    if state.get("emergency_desired") is None:
+                        message = (f"Einstellungen gespeichert. Backup-SOC {state['current']} % bestätigt. "
+                                   f"Notlade-Ziel-SOC {state.get('emergency_current')} % gelesen und unverändert gelassen; kein Sollwert vorgegeben.")
             elif outcome == "retry_pending":
                 message = "Einstellungen gespeichert. SOC-Abgleich fehlgeschlagen; Wiederholung in 30 Sekunden. " + state["error"]
             else:
@@ -276,6 +306,7 @@ class Manager:
                 "saved": True, "applied": applied, "outcome": outcome, "message": message,
                 "category": state.get("category"), "desired": state.get("desired"),
                 "current": state.get("current"), "warning_level": state.get("warning_level"),
+                "emergency_desired": state.get("emergency_desired"), "emergency_current": state.get("emergency_current"),
                 "reason": state.get("reason"),
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }}
@@ -289,6 +320,8 @@ class Manager:
                    "categories": categories, "proof": data.get("proof")}
         if "check_interval_minutes" in data:
             payload["check_interval_minutes"] = validate_interval(data["check_interval_minutes"])
+        if "manage_emergency_soc" in data:
+            payload["manage_emergency_soc"] = validate_flag(data["manage_emergency_soc"])
         fingerprint = json.dumps(payload, sort_keys=True)
         now = time.monotonic()
         self._save_jobs = {key: job for key, job in self._save_jobs.items()
@@ -424,14 +457,17 @@ class Manager:
         level = observation.get("level")
         decision = decision_for(device["categories"], self.now().month, level, observation.get("warnings"))
         desired, category = decision["desired"], decision["category"]
+        manage_emergency = device.get("manage_emergency_soc", False)
+        emergency_desired = decision["emergency_desired"] if manage_emergency else None
         state = self.runtime.setdefault(identity, {})
-        state.update(category=category, warning_level=level, desired=desired, reason=decision["reason"])
+        state.update(category=category, warning_level=level, desired=desired, reason=decision["reason"], emergency_desired=emergency_desired)
         if desired is None:
             self._cancel_retry(identity)
             state.update(status="pausiert", error=decision["reason"]+" Kommunikationsprüfung bleibt möglich.")
             return
-        if force or desired != self._desired.get(identity):
-            self._desired[identity] = desired
+        targets = (desired, emergency_desired)
+        if force or targets != self._desired.get(identity):
+            self._desired[identity] = targets
             self._pending.add(identity)
             self._cancel_retry(identity)
         if identity not in self._pending:
@@ -445,8 +481,15 @@ class Manager:
                 progress("read_soc", f"Aktuell gültiger Sollwert: {desired} %. Backup-SOC am WR wird geprüft.")
                 if hasattr(adapter, "set_progress"):
                     adapter.set_progress(progress)
-            actual, written = await adapter.apply(desired)
+            if manage_emergency:
+                report = await adapter.apply_targets(desired, emergency_desired)
+                actual, written = report["current"], report["backup_written"] or report["emergency_written"]
+                state["emergency_current"] = report["emergency_current"]
+            else:
+                actual, written = await adapter.apply(desired)
         except ModbusError as err:
+            if hasattr(err, "report"):
+                state.update(current=err.report["current"], emergency_current=err.report["emergency_current"])
             state.update(status="fehler", error=str(err))
             LOGGER.warning("%s: %s; Wiederholung in 30 Sekunden", device["connection"]["name"], err)
             self._schedule_retry(identity)

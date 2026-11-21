@@ -34,7 +34,7 @@ def create_app(manager, bridge, *, ingress_only=True):
         except OSError:
             return web.json_response({"error": "Einstellungen konnten nicht dauerhaft gespeichert werden."}, status=503)
 
-    app = web.Application(middlewares=[guard], client_max_size=64 * 1024)
+    app = web.Application(middlewares=[guard], client_max_size=1024 * 1024)
 
     async def index(request):
         return web.FileResponse(STATIC / "index.html", headers={

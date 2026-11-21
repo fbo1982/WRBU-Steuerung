@@ -10,6 +10,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.mutate = lambda packet: packet
         self.requests = []
         self.value = 40
+        self.emergency_value = 20
         self.delay = 0
         self.server = await asyncio.start_server(self.handle, "127.0.0.1", 0)
         self.port = self.server.sockets[0].getsockname()[1]
@@ -34,7 +35,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 function, address, value = struct.unpack(">BHH", request)
                 self.requests.append((function, address, value))
                 if function in (3, 4):
-                    words = [self.value]
+                    words = [self.emergency_value if address == 32617 else self.value]
                     if function == 4 and address == 4999:
                         words = [0xE28]
                     elif function == 4 and address == 4989:
@@ -42,7 +43,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                         words = [int.from_bytes(raw[i:i+2], "big") for i in range(0, 20, 2)]
                     response = bytes([function, len(words) * 2]) + struct.pack(f">{len(words)}H", *words)
                 else:
-                    self.value = value
+                    if address == 32617:
+                        self.emergency_value = value
+                    else:
+                        self.value = value
                     response = request
                 await asyncio.sleep(self.delay)
                 packet = struct.pack(">HHHB", tid, 0, len(response) + 1, unit) + response
@@ -82,6 +86,18 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests, [
             (4, 4999, 1), (4, 4989, 10), (3, 13099, 1),
             (6, 13099, 40), (3, 13099, 1),
+        ])
+
+    async def test_dual_soc_probe_uses_correct_wire_addresses_over_tcp(self):
+        adapter = profiles.SungrowSH({**CONNECTION, "port": self.port},
+            session_factory=lambda host, port, unit: self.session())
+        result = await adapter.probe(include_emergency=True)
+        self.assertTrue(result.success)
+        self.assertEqual((result.before, result.after), (40, 40))
+        self.assertEqual((result.emergency_before, result.emergency_after), (20, 20))
+        self.assertEqual(self.requests, [
+            (4, 4999, 1), (4, 4989, 10), (3, 13099, 1), (3, 32617, 1),
+            (6, 13099, 40), (3, 13099, 1), (6, 32617, 20), (3, 32617, 1),
         ])
 
     async def test_mismatched_transaction_protocol_or_unit_rejected(self):

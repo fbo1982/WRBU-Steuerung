@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.7"><script src="static/app.js?v=0.1.7" defer></script></head>
+<title>WRBU Steuerung</title><link rel="stylesheet" href="static/style.css?v=0.1.8"><script src="static/app.js?v=0.1.8" defer></script></head>
 <body>
-<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.7</small></h1>
+<header><div><span class="eyebrow">ENERGIEMANAGEMENT</span><h1>WRBU Steuerung <small id="version">V0.1.8</small></h1>
 <p>Deine Backup-Reserve. Passend zur Jahreszeit und zur Wetterlage.</p></div></header>
 <main>
 <nav class="tabs" aria-label="Hauptnavigation">
@@ -50,9 +50,11 @@
 <label>Modbus-Geräte-ID<input name="unit" type="number" min="1" max="247" value="1" required></label>
 <label>Abfrageintervall (Minuten)<input id="check-interval" name="check_interval_minutes" type="number" min="0" max="1440" step="1" value="0"></label>
 </div>
-<p class="hint">0 = Aus. Sonst alle 1–1440 Minuten den Backup-SOC lesen, mit der gültigen Monats-/DWD-Vorgabe vergleichen und nur eine Abweichung korrigieren. Die übrigen WR-Einstellungen werden nicht verändert.</p>
+<label class="check-label"><input id="manage-emergency" type="checkbox"> Notlade-Ziel-SOC zusätzlich verwalten</label>
+<p class="hint">„Target SOC of off-grid emergency charging“, 1–100 %. Vor der ersten Aktivierung beide Parameter gemeinsam prüfen. Das steuert den Zielwert für die Notladung im Inselbetrieb.</p>
+<p class="hint">0 = Aus. Sonst alle 1–1440 Minuten die verwalteten SOC-Werte lesen, mit der gültigen Monats-/DWD-Vorgabe vergleichen und nur Abweichungen korrigieren.</p>
 <p id="connection-hint" class="hint"></p>
-<div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Backup-SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>
+<div class="test-bar"><button type="button" id="test-device">Kommunikation prüfen</button><span>Jeden verwalteten SOC lesen → denselben Wert einmal schreiben → zurücklesen und vergleichen.</span></div>
 <div id="test-result" class="result" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 <p class="hint">Die Monatsregeln werden im Reiter „Kategorie“ bearbeitet. Ein neuer WR erhält zunächst die Standardkategorien.</p>
 </div>
@@ -63,13 +65,19 @@
 <div class="fields"><label>Kategoriename<input id="category-name" maxlength="80"></label>
 <label>Normaler Backup-SOC (%)<input id="normal-soc" type="number" min="0" max="100" step="1" value="25"></label>
 <label>Standard bei DWD-Stufe 2–4 (%)<input id="warning-soc" type="number" min="0" max="100" step="1" value="60"></label></div>
+<div id="emergency-category-fields" class="fields" hidden>
+<label>Normaler Notlade-Ziel-SOC (%)<input id="normal-emergency-soc" type="number" min="1" max="100" step="1" placeholder="Leer = unverändert lassen"></label>
+<label>Notlade-Ziel-SOC bei DWD-Stufe 2–4 (%)<input id="warning-emergency-soc" type="number" min="1" max="100" step="1" placeholder="Leer = normaler Notlade-Ziel-SOC"></label>
+<p class="hint">Separater Zielwert für die netzunabhängige Notladung. Werte werden nicht aus dem Backup-SOC berechnet. In einer Ereignisregel ersetzt ein eigener Notlade-Ziel-SOC den DWD-Standard; leer übernimmt den Standard dieser Kategorie.</p>
+</div>
 <div class="event-settings">
 <div class="section-title"><div><h3>DWD-Ereignisregeln</h3><p>Eigene Reserve für bestimmte Ereignisse oder ganze Wettergruppen.</p></div><button id="add-event-rule" type="button" class="secondary small">Ereignisregel hinzufügen</button></div>
 <div id="event-rules"></div>
 <p class="hint">Eine passende Ereignisregel ersetzt für diese Warnung den Standardwert. Ohne passende Regel gilt ab Stufe 2 der Standard. Bei mehreren passenden Regeln oder Warnungen zählt der höchste SOC, mindestens die normale Monatsreserve. Es zählen nur aktuell gültige Warnungen.</p>
 </div>
 <fieldset><legend>Monate</legend><div id="months" class="months"></div></fieldset>
-<p class="hint">Ausgegraute Monate gehören bereits zu einer anderen Kategorie.</p>
+<p class="hint">Bereits vergebene Monate kannst du nach Bestätigung hierher verschieben. Kategorien ohne Monate bleiben als inaktive Vorlage erhalten.</p>
+<p id="month-transfer-message" class="hint" role="status" aria-live="polite"></p>
 <button type="button" id="apply-category">Kategorie übernehmen</button>
 <button type="button" id="cancel-category" class="secondary">Verwerfen</button></div>
 </div>

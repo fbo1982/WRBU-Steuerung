@@ -1,4 +1,4 @@
-# WRBU Steuerung · V0.1.7
+# WRBU Steuerung · V0.1.8
 
 Home-Assistant-App für saisonale Backup-SOC-Regeln mit eigener Oberfläche,
 direkter Modbus-Prüfung und integrierten DWD-Warnungen.
@@ -38,7 +38,8 @@ Verbindung keinen neuen Kommunikationstest.
 
 Nach jedem Intervall wird der tatsächliche Backup-SOC gelesen und mit der aktuell
 gültigen Monats-/DWD-Vorgabe verglichen. Nur eine Abweichung wird geschrieben
-und zurückgelesen. Andere WR-Einstellungen werden nicht abgefragt oder verändert.
+und zurückgelesen. Bei aktivierter Notlade-SOC-Verwaltung wird auch dieser zweite
+SOC-Wert gelesen und mit seiner eigenen Vorgabe abgeglichen.
 Bei fehlender Warnlage oder Monat ohne Kategorie pausiert auch dieser Abgleich.
 Modbus-Fehler verwenden denselben einzelnen 30-Sekunden-Retry; Intervallprüfungen
 umgehen ihn nicht. Es gibt keine parallelen WR-Zugriffe und keinen Rückstau verpasster
@@ -169,8 +170,24 @@ Ohne Ereignisregeln verwendet Stufe 0/1 weiterhin den normalen Wert.
 Vorabinformationen, Testmeldungen und noch nicht begonnene Warnungen lösen
 keine Unwetterreserve aus.
 
-Belegte Monate sind in anderen Kategorien nicht auswählbar; zusätzlich verhindert
-die Prüfung beim Speichern Überschneidungen. Die Warnreserve darf nicht niedriger
+Die Anzahl der Kategorien ist nicht auf die drei Vorgaben beschränkt.
+**Kategorie hinzufügen** bleibt auch dann verfügbar, wenn alle Monate vergeben sind.
+Kategorien dürfen zunächst ohne Monate angelegt werden und bleiben dann als
+**inaktive Vorlage** mit sämtlichen SOC-Werten und Ereignisregeln erhalten.
+Da ein Monat genau einer Kategorie gehört, können gleichzeitig höchstens zwölf
+Kategorien Monate zugeordnet haben; weitere Vorlagen bleiben frei bearbeitbar.
+
+Bereits zugeordnete Monate sind auswählbar und zeigen ihre bisherige Kategorie.
+Beim Anwählen erscheint ein Hinweis mit Bestätigung zur Übernahme in die aktuell
+bearbeitete Kategorie. Erst **Kategorie übernehmen** entfernt die bestätigten Monate
+im Entwurf aus der bisherigen Kategorie und ordnet sie der neuen zu.
+**Verwerfen** lässt die alte Zuordnung bestehen. Verliert eine Kategorie dabei ihren
+letzten Monat, bleibt sie als inaktive Vorlage erhalten. Erst **Speichern und SOC
+abgleichen** speichert die gesamte neue Zuordnung dauerhaft und gleicht die aktuell
+gültigen SOC-Vorgaben am WR ab. Überschneidungen werden zusätzlich serverseitig
+abgewiesen; fehlgeschlagenes Speichern verändert keine bisherige Zuordnung am WR.
+
+Die Warnreserve darf nicht niedriger
 als die normale Reserve sein. Nicht zugeordnete Monate bleiben ungesteuert,
 auch bei einer DWD-Warnung. Mindestens eine Kategorie ist erforderlich.
 
@@ -190,6 +207,60 @@ DWD-Abfragen und die fünfsekündige Aktualisierung der Oberfläche erzeugen
 keine regelmäßigen Modbus-Schreibzugriffe.
 
 ## Kommunikationsprüfung
+
+### Notlade-Ziel-SOC zusätzlich verwalten
+
+Der zusätzliche Wert heißt **Target SOC of off-grid emergency charging**,
+deutsch **Notlade-Ziel-SOC**, mit dem Bereich **1–100 %**. Er ist ein eigener
+Parameter für die Notladung im Inselbetrieb und kein frei einstellbarer
+Start-/Zielwert der normalen Netzladung. Es werden keine Ladebefehle oder
+Änderungen des EMS-Modus ausgelöst und keine Notladefunktion automatisch aktiviert.
+
+1. Unter **Settings → Wechselrichter bearbeiten** die Option
+   **Notlade-Ziel-SOC zusätzlich verwalten** einschalten.
+2. **Kommunikation prüfen** wählen. Die App liest zunächst beide Werte, schreibt
+   für jeden Parameter einmal denselben gelesenen Wert und liest ihn zurück.
+   Backup-SOC und Notlade-Ziel-SOC erhalten jeweils ihre eigene Ergebnisanzeige.
+3. Erst wenn beide Prüfungen erfolgreich waren, ist die erstmalige Aktivierung
+   speicherbar. Der im Test gelesene Notladewert sollte der Anzeige in iSolarCloud
+   entsprechen. Ein nicht erreichbarer Parameter, ungültiger Wert oder abweichendes
+   Rücklesen verhindert die Aktivierung. Die Backup-SOC-Verwaltung kann durch
+   Abwählen der Zusatzoption weiter verwendet werden.
+4. Nach dem Speichern unter **Kategorie → Bearbeiten** den normalen Notlade-Ziel-SOC
+   und optional einen anderen Wert für DWD-Stufen 2–4 eintragen.
+   Ereignisregeln haben ebenfalls ein separates optionales Notlade-Ziel-SOC-Feld.
+5. **Kategorie übernehmen → Speichern und SOC abgleichen** gleicht beide Parameter ab.
+
+Die Notladewerte werden manuell und unabhängig vom Backup-SOC festgelegt.
+Ein leerer normaler Notladewert bedeutet **keine neue Vorgabe**; der vorhandene
+Gerätewert bleibt erhalten. Ein leerer DWD-Wert übernimmt den normalen Wert.
+Ein leerer Ereigniswert übernimmt den für diese Warnung geltenden Standard.
+Unter mehreren passenden Regeln bzw. aktiven Warnungen wird für jeden Parameter
+separat der höchste passende Wert gewählt. Der Notlade-Ziel-SOC besitzt keine
+zusätzliche Untergrenze durch den normalen Backup-SOC und darf auch unabhängig
+vom normalen Notladewert niedriger oder höher eingestellt werden.
+
+Bei unveränderter, bereits gemeinsam geprüfter WR-Verbindung benötigen spätere
+Wertänderungen keinen erneuten Einrichtungstest. Neue Endpunkte und die erste
+Aktivierung des zweiten Parameters benötigen die gemeinsame Prüfung.
+Bestehende Anlagen erhalten durch das Update keine zusätzlichen Modbus-Zugriffe;
+die Zusatzoption startet ausgeschaltet.
+
+Die Zuordnung verwendet **Dokumentationsregister 32618**, Modbus-Adresse **32617**,
+U16, 1 %, FC03/FC06. Sie stammt aus dem öffentlich dokumentierten WiNet-Installer-
+Parameterkatalog und ist im bisherigen öffentlichen SH-Modbusprotokoll nicht
+aufgeführt. Ob die konkrete Firmware und die iHomeManager-Weiterleitung diesen
+Parameter bereitstellen, entscheidet daher die Prüfung am eingerichteten Endpunkt.
+Ein erfolgreicher Test mit simulierten Registern ersetzt diese Anlagenprüfung nicht.
+
+Beim normalen Abgleich liest die App beide verwalteten Werte vor dem Schreiben.
+Nur abweichende Werte werden geschrieben und einzeln zurückgelesen. Beide
+Registeränderungen bilden keine atomare Hardwaretransaktion: Schlägt der zweite
+Schreibvorgang fehl, werden ein bestätigter erster Wert und der Teilfehler angezeigt.
+Der Retry nach 30 Sekunden liest erneut und überspringt bereits korrekte Werte.
+Bei fehlender Warnlage oder einem Monat ohne Kategorie pausiert die Vorgabe beider Werte.
+
+### Prüfung des Backup-SOC
 
 Die App erkennt Modell und Seriennummer, liest den Backup-SOC, schreibt
 **denselben Wert genau einmal** und liest ihn erneut vom Gerät.
@@ -261,7 +332,7 @@ Andere Programme sollten keine gegensätzlichen Reservevorgaben schreiben.
 
 ## Update von V0.1.0
 
-App-Store aktualisieren, App auf **V0.1.7** aktualisieren und neu starten.
+App-Store aktualisieren, App auf **V0.1.8** aktualisieren und neu starten.
 Anschließend die Weboberfläche neu laden. Vorhandene Geräte und Kategorien
 bleiben erhalten. Die frühere DWD-Sensorzuordnung im WR-Eintrag wird ignoriert;
 den Wetterstandort einmal zentral einrichten. Die früher bereitgestellte
@@ -290,4 +361,6 @@ steht noch aus.
 - [DWD-CAP-Warnstufen und Meldungstypen](https://www.dwd.de/DE/leistungen/opendata/help/warnungen/cap_dwd_profile_de_pdf_2_1_14.pdf?__blob=publicationFile&v=3)
 - [Home-Assistant-App-Repositories](https://developers.home-assistant.io/docs/apps/repository/)
 - [Sungrow-SH-Protokoll](https://forum.iobroker.net/assets/uploads/files/1771841809177-ti_20251119_communication-protocol-of-residential-hybrid-inverter_v1.1.11_en.pdf)
+- [WiNet-Installer-Parameterkatalog: Notlade-Ziel-SOC / Register 32618](https://github.com/NickStallman/Rewired-S/blob/bd280e295c809263514a18f6efbbc44335de62d4/data/installer_rules.yaml)
+- [Registeradressierung: Dokumentationsadresse minus eins](https://github.com/NickStallman/Rewired-S/blob/bd280e295c809263514a18f6efbbc44335de62d4/docs/inverter_registers.md)
 

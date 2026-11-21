@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## V0.1.8
+
+- Weitere Kategorien auch bei vollständig vergebenen Monaten anlegen; Kategorien ohne Monate bleiben als inaktive Vorlagen erhalten.
+- Bereits vergebene Monate zeigen den bisherigen Besitzer und können nach Bestätigung in die zuletzt gewählte Kategorie übernommen werden.
+- Übernahme verändert zunächst den Entwurf; Verwerfen lässt die bisherige Zuordnung bestehen, dauerhaftes Speichern bleibt atomar.
+- Optionaler separater Notlade-Ziel-SOC (Target SOC of off-grid emergency charging, 1–100 %) für Normalbetrieb, DWD-Standard und einzelne Ereignisse.
+- Erstmalige Aktivierung erfordert die gemeinsame Prüfung beider Parameter mit Lesen, einmaligem Zurückschreiben desselben Werts und Rücklesevergleich.
+- Nach geprüfter Aktivierung werden beide SOC-Werte beim Speichern, bei Regeländerungen und optionalen Intervallprüfungen abgeglichen; geschrieben werden nur Abweichungen.
+- Teilfehler beider Register werden angezeigt; der bestehende 30-Sekunden-Retry überspringt bereits korrekte Werte.
+- Bestehende Geräte bleiben ohne aktivierte Zusatzverwaltung unverändert; Registerunterstützung der konkreten Firmware/Weiterleitung wird durch die Kommunikationsprüfung geprüft.
+- Zusätzliche Tests für beliebig viele Vorlagen, Monatsübernahme, beide Register, Aktivierungsnachweis und Teilfehler.
+
 ## V0.1.7
 
 - Eigene DWD-Ereignisregeln je Wechselrichter und Monatskategorie mit Ereignis/Gruppe, Mindestwarnstufe und Backup-SOC.

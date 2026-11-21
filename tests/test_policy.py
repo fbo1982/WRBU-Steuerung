@@ -28,7 +28,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(policy.target_for(CATEGORIES[:1], 6, "3"), (None, None))
 
     def test_bad_soc_names_and_months_rejected(self):
-        for key, value in [("months", []), ("months", [0]), ("months", [13]),
+        for key, value in [("months", None), ("months", [0]), ("months", [13]),
                            ("months", [1, 1]), ("normal_soc", -1),
                            ("warning_soc", 101), ("normal_soc", 40.5),
                            ("warning_soc", 20), ("name", " ")]:

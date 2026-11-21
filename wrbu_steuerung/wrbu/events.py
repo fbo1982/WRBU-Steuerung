@@ -64,6 +64,11 @@ def validate_event_rules(rules, normal_soc):
             raise ValueError("Dieses Ereignis mit dieser Mindestwarnstufe ist bereits vorhanden.")
         used.add(key)
         result.append({"event": rule["event"], "min_level": level, "soc": soc})
+        if "emergency_soc" in rule:
+            value = rule["emergency_soc"]
+            if value is not None and (type(value) is not int or not 1 <= value <= 100):
+                raise ValueError("Notlade-Ziel-SOC muss eine ganze Zahl zwischen 1 und 100 sein oder leer bleiben.")
+            result[-1]["emergency_soc"] = value
     return result
 
 
